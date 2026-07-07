@@ -14,6 +14,7 @@ import Campaigns from './pages/Campaigns';
 import AutoReply from './pages/AutoReply';
 import KnowledgeBase from './pages/KnowledgeBase';
 import WorkspaceUsers from './pages/WorkspaceUsers';
+import AdminTenants from './pages/AdminTenants';
 import AdminPanel from './pages/AdminPanel';
 
 function App() {
@@ -41,6 +42,7 @@ function App() {
             <Route path="autoreply" element={<AutoReply />} />
             <Route path="kb" element={<KnowledgeBase />} />
             <Route path="users" element={<WorkspaceUsers />} />
+            <Route path="tenants" element={<AdminTenants />} />
             <Route path="admin" element={<AdminPanel />} />
           </Route>
         </Routes>
