@@ -11,7 +11,8 @@ import {
   LogOut,
   User,
   Shield,
-  Layers
+  Layers,
+  Tag
 } from 'lucide-react';
 
 const SidebarLink = ({ to, icon: Icon, children }) => {
@@ -22,7 +23,7 @@ const SidebarLink = ({ to, icon: Icon, children }) => {
       className={({ isActive }) =>
         `flex items-center gap-3.5 px-4.5 py-3.5 rounded-xl transition-all duration-200 ${
           isActive
-            ? 'bg-emerald-50 text-emerald-700 border-l-4 border-emerald-600 font-bold text-sm shadow-sm'
+            ? 'bg-emerald-55 text-emerald-700 border-l-4 border-emerald-605 font-bold text-sm shadow-sm'
             : 'text-slate-600 hover:text-emerald-600 hover:bg-slate-100/60 font-semibold text-sm'
         }`
       }
@@ -40,7 +41,7 @@ const DashboardLayout = () => {
   if (loading) {
     return (
       <div className="flex h-screen items-center justify-center bg-slate-50">
-        <div className="h-10 w-10 animate-spin rounded-full border-4 border-emerald-600 border-t-transparent"></div>
+        <div className="h-10 w-10 animate-spin rounded-full border-4 border-emerald-606 border-t-transparent"></div>
       </div>
     );
   }
@@ -74,6 +75,7 @@ const DashboardLayout = () => {
                 <SidebarLink to="/dashboard/admin" icon={Shield}>Admin Panel</SidebarLink>
                 <SidebarLink to="/dashboard/tenants" icon={Layers}>Workspaces</SidebarLink>
                 <SidebarLink to="/dashboard/users" icon={Users}>Users</SidebarLink>
+                <SidebarLink to="/dashboard/plans" icon={Tag}>Plans</SidebarLink>
               </>
             ) : (
               // Workspace-Specific Sidebar Tabs
@@ -93,7 +95,7 @@ const DashboardLayout = () => {
         {/* Profile Card & Log Out */}
         <div className="border-t border-slate-100 pt-4">
           <div className="flex items-center gap-3 px-3 py-3 rounded-xl bg-slate-50 border border-slate-200/60 mb-4">
-            <div className="h-9 w-9 rounded-full bg-emerald-50 flex items-center justify-center text-emerald-600 border border-emerald-100">
+            <div className="h-9 w-9 rounded-full bg-emerald-55 flex items-center justify-center text-emerald-600 border border-emerald-100">
               <User size={18} />
             </div>
             <div className="overflow-hidden">
@@ -120,7 +122,7 @@ const DashboardLayout = () => {
             <h2 className="text-sm font-bold text-slate-400">Workspace / <span className="text-slate-800 font-extrabold">{tenant?.name || 'Admin Console'}</span></h2>
           </div>
           <div className="flex items-center gap-3">
-            <span className="px-3.5 py-1.5 rounded-full text-xs font-bold tracking-wide border border-emerald-200 bg-emerald-50 text-emerald-700">
+            <span className="px-3.5 py-1.5 rounded-full text-xs font-bold tracking-wide border border-emerald-200 bg-emerald-55 text-emerald-700">
               {tenant?.plan || 'Admin'} plan
             </span>
           </div>
