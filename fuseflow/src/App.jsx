@@ -5,6 +5,8 @@ import DashboardLayout from './components/DashboardLayout';
 import LandingPage from './pages/LandingPage';
 import Login from './pages/Login';
 import Signup from './pages/Signup';
+import AdminLogin from './pages/AdminLogin';
+import AdminRegister from './pages/AdminRegister';
 import Overview from './pages/Overview';
 import Sessions from './pages/Sessions';
 import Contacts from './pages/Contacts';
@@ -21,9 +23,13 @@ function App() {
           {/* Public Landing Page */}
           <Route path="/" element={<LandingPage />} />
 
-          {/* Public Authentication Routes */}
+          {/* Public User Authentication Routes */}
           <Route path="/login" element={<Login />} />
           <Route path="/signup" element={<Signup />} />
+
+          {/* Public Admin Authentication Routes */}
+          <Route path="/admin-login" element={<AdminLogin />} />
+          <Route path="/admin-register" element={<AdminRegister />} />
 
           {/* Protected Dashboard Routes */}
           <Route path="/dashboard" element={<DashboardLayout />}>
