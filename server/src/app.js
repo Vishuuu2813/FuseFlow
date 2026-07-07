@@ -11,7 +11,6 @@ import pino from 'pino';
 // Configurations
 import { connectDB } from './config/db.js';
 import { initIO } from './socket.js';
-import { initCampaignWorker } from './workers/campaignWorker.js';
 
 // Routes
 import authRouter from './routes/auth.js';
@@ -34,10 +33,7 @@ const server = http.createServer(app);
 // 1. Initialize WebSockets
 initIO(server);
 
-// 2. Initialize background BullMQ Campaign Worker
-initCampaignWorker();
-
-// 3. Connect to Database
+// 2. Connect to Database
 connectDB();
 
 // 4. Middlewares

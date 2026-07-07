@@ -1,5 +1,3 @@
-import { Worker } from 'bullmq';
-import { redisConnection, getRedisStatus } from '../config/redis.js';
 import Campaign from '../models/Campaign.js';
 import MessageLog from '../models/MessageLog.js';
 import Contact from '../models/Contact.js';
@@ -34,7 +32,7 @@ const interpolateTemplate = (text, contact) => {
   return result;
 };
 
-// Extracted campaign executor callable by both BullMQ worker and local in-memory fallback
+// Core campaign executor running direct loop in-memory
 export const executeCampaignLogic = async (data) => {
   const { campaignId, tenantId, whatsappSessionId, contactIds } = data;
 
@@ -179,34 +177,5 @@ export const executeCampaignLogic = async (data) => {
     });
   } catch (err) {
     logger.error(`Error in executeCampaignLogic: ${err.message}`);
-  }
-};
-
-export const initCampaignWorker = () => {
-  if (!getRedisStatus()) {
-    logger.warn('Redis is offline. Skipping BullMQ Worker initialization (local in-memory fallback active).');
-    return null;
-  }
-
-  try {
-    const worker = new Worker(
-      'campaignQueue',
-      async (job) => {
-        await executeCampaignLogic(job.data);
-      },
-      {
-        connection: redisConnection,
-        concurrency: 2,
-      }
-    );
-
-    worker.on('failed', (job, err) => {
-      logger.error(`Campaign Job ${job.id} failed with error: ${err.message}`);
-    });
-
-    return worker;
-  } catch (err) {
-    logger.error(`Failed to initialize BullMQ Campaign Worker: ${err.message}`);
-    return null;
   }
 };

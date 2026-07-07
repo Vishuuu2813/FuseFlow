@@ -1,5 +1,3 @@
-import { Queue } from 'bullmq';
-import { redisConnection, getRedisStatus } from '../config/redis.js';
 import { executeCampaignLogic } from '../workers/campaignWorker.js';
 import pino from 'pino';
 
@@ -10,56 +8,37 @@ const logger = pino({
   }
 });
 
-// Declare the queue
-const campaignQueue = new Queue('campaignQueue', {
-  connection: redisConnection,
-  defaultJobOptions: {
-    attempts: 3,
-    backoff: {
-      type: 'exponential',
-      delay: 5000,
-    },
-    removeOnComplete: true,
-    removeOnFail: false,
-  },
-});
-
-// Suppress unhandled queue errors if Redis connection fails
-campaignQueue.on('error', () => {});
+// Map to track active in-memory job timers for cancellation
+const activeCampaigns = new Map();
 
 export const addCampaignJob = async (campaignId, data) => {
-  if (getRedisStatus()) {
-    try {
-      return await campaignQueue.add(`campaign-${campaignId}`, data, {
-        jobId: campaignId.toString(),
-      });
-    } catch (err) {
-      logger.warn('BullMQ dispatch failed, falling back to local memory execution.');
-    }
+  logger.info(`[In-Memory Queue] Scheduling campaign ${campaignId}...`);
+  
+  const jobId = campaignId.toString();
+  
+  // Cancel if already scheduled to avoid double runs
+  if (activeCampaigns.has(jobId)) {
+    clearTimeout(activeCampaigns.get(jobId));
   }
 
-  // Local Memory Fallback execution (runs in background via setTimeout)
-  logger.info(`[Fallback] Processing campaign ${campaignId} locally in-memory (Redis offline)...`);
-  setTimeout(async () => {
+  const timeoutId = setTimeout(async () => {
     try {
+      activeCampaigns.delete(jobId);
       await executeCampaignLogic(data);
     } catch (err) {
-      logger.error(`Local Campaign execution failed: ${err.message}`);
+      logger.error(`In-Memory Campaign execution failed: ${err.message}`);
     }
   }, 0);
-  
-  return { id: campaignId.toString() };
+
+  activeCampaigns.set(jobId, timeoutId);
+  return { id: jobId };
 };
 
 export const cancelCampaignJob = async (campaignId) => {
-  if (getRedisStatus()) {
-    try {
-      const job = await campaignQueue.getJob(campaignId.toString());
-      if (job) {
-        await job.remove();
-      }
-    } catch (err) {
-      // Fail silently
-    }
+  const jobId = campaignId.toString();
+  if (activeCampaigns.has(jobId)) {
+    logger.info(`[In-Memory Queue] Cancelling execution for campaign ${campaignId}.`);
+    clearTimeout(activeCampaigns.get(jobId));
+    activeCampaigns.delete(jobId);
   }
 };
