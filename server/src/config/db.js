@@ -1,5 +1,9 @@
 import mongoose from 'mongoose';
 import pino from 'pino';
+import dns from 'dns';
+
+// Force Google DNS resolution to prevent querySrv issues with local network router configurations
+dns.setServers(['8.8.8.8', '8.8.4.4']);
 
 const logger = pino({
   transport: {
