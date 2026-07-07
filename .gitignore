@@ -1,0 +1,26 @@
+# Dependencies
+node_modules/
+fuseflow/node_modules/
+server/node_modules/
+
+# Environment Variables
+.env
+server/.env
+fuseflow/.env
+
+# Build outputs
+dist/
+build/
+fuseflow/dist/
+
+# System Files
+.DS_Store
+Thumbs.db
+*.log
+
+# Temp/Cache
+.npm
+.eslintcache
+.parcel-cache
+.turbo
+.vercel
