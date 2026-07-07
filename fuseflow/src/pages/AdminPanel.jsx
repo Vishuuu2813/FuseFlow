@@ -8,13 +8,12 @@ import {
   Search,
   CheckCircle,
   XCircle,
-  Key,
   Trash2,
   Edit2,
   Lock,
-  UserPlus
+  UserPlus,
+  Plus
 } from 'lucide-react';
-import { motion } from 'framer-motion';
 
 const AdminPanel = () => {
   const [stats, setStats] = useState({
@@ -37,6 +36,14 @@ const AdminPanel = () => {
   const [tenantMaxContacts, setTenantMaxContacts] = useState(10000);
   const [tenantPlan, setTenantPlan] = useState('Professional');
   
+  // Create User modal state
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [newUserName, setNewUserName] = useState('');
+  const [newUserEmail, setNewUserEmail] = useState('');
+  const [newUserPass, setNewUserPass] = useState('');
+  const [newUserRoleField, setNewUserRoleField] = useState('Employee');
+  const [newUserTenantId, setNewUserTenantId] = useState('');
+
   // Admin Self password change state
   const [oldPassword, setOldPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -108,6 +115,39 @@ const AdminPanel = () => {
     }
   };
 
+  const handleCreateUserSubmit = async (e) => {
+    e.preventDefault();
+    setError('');
+    setSuccess('');
+    try {
+      const { data } = await api.post('/admin/users', {
+        name: newUserName,
+        email: newUserEmail,
+        password: newUserPass,
+        role: newUserRoleField,
+        tenantId: newUserTenantId || null
+      });
+
+      setUsers((prev) => [data, ...prev]);
+      
+      // Reset form
+      setNewUserName('');
+      setNewUserEmail('');
+      setNewUserPass('');
+      setNewUserRoleField('Employee');
+      setNewUserTenantId('');
+      
+      setShowCreateModal(false);
+      setSuccess('New user account created successfully.');
+      
+      // Refresh stats
+      const statsRes = await api.get('/admin/stats');
+      setStats(statsRes.data);
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to create user account.');
+    }
+  };
+
   const handleUpdateTenantLimits = async (tenantId) => {
     try {
       const { data } = await api.put(`/admin/tenants/${tenantId}/limits`, {
@@ -150,9 +190,17 @@ const AdminPanel = () => {
   return (
     <div className="flex flex-col gap-8 pb-12">
       {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold bg-gradient-to-r from-white to-slate-400 bg-clip-text text-transparent">Admin Command Center</h1>
-        <p className="text-slate-400 text-sm mt-1">Global platform metrics, tenant limits, roles management, and access controls.</p>
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div>
+          <h1 className="text-2xl font-bold bg-gradient-to-r from-white to-slate-400 bg-clip-text text-transparent">Admin Command Center</h1>
+          <p className="text-slate-400 text-sm mt-1">Platform metrics, tenant limits, roles management, and access controls.</p>
+        </div>
+        <button
+          onClick={() => setShowCreateModal(true)}
+          className="px-4 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-slate-950 text-xs font-bold flex items-center gap-2 cursor-pointer shadow-lg shadow-emerald-500/20 transition-all hover:scale-[1.02]"
+        >
+          <UserPlus size={14} /> Create User Account
+        </button>
       </div>
 
       {error && (
@@ -227,7 +275,7 @@ const AdminPanel = () => {
               <thead>
                 <tr className="border-b border-white/5 text-slate-500">
                   <th className="pb-3 font-semibold">User Details</th>
-                  <th className="pb-3 font-semibold">Tenant ID</th>
+                  <th className="pb-3 font-semibold">Tenant Name</th>
                   <th className="pb-3 font-semibold">Role</th>
                   <th className="pb-3 font-semibold">Access</th>
                   <th className="pb-3 font-semibold text-right">Actions</th>
@@ -241,11 +289,10 @@ const AdminPanel = () => {
                       <div className="text-[10px] text-slate-500">{user.email}</div>
                     </td>
                     <td className="py-4 font-mono text-[10px] text-slate-400">
-                      {user.tenantId?._id || user.tenantId || 'Super Admin'}
+                      {user.tenantId?.companyName || user.tenantId?.name || 'Global Admin'}
                     </td>
                     <td className="py-4">
                       <span className={`px-2.5 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider ${
-                        user.role === 'Super Admin' ? 'bg-purple-500/10 text-purple-400' :
                         user.role === 'Admin' ? 'bg-indigo-500/10 text-indigo-400' : 'bg-slate-800 text-slate-400'
                       }`}>
                         {user.role}
@@ -334,7 +381,7 @@ const AdminPanel = () => {
 
               <button
                 type="submit"
-                className="w-full py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 text-xs font-bold cursor-pointer transition-colors mt-2"
+                className="w-full py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 text-xs font-bold cursor-pointer transition-colors mt-2"
               >
                 Change Admin Password
               </button>
@@ -376,6 +423,101 @@ const AdminPanel = () => {
 
       </div>
 
+      {/* CREATE USER MODAL */}
+      {showCreateModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4">
+          <form onSubmit={handleCreateUserSubmit} className="w-full max-w-md backdrop-blur-xl bg-slate-900 border border-white/5 shadow-2xl rounded-3xl p-6 flex flex-col gap-5">
+            <div>
+              <h3 className="text-base font-bold text-slate-200">Create New Account</h3>
+              <p className="text-slate-500 text-xs mt-1">Register a new user or administrative role directly.</p>
+            </div>
+
+            <div className="flex flex-col gap-3.5">
+              <div>
+                <label className="block text-xs font-semibold text-slate-400 mb-1">Full Name</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="John Doe"
+                  value={newUserName}
+                  onChange={(e) => setNewUserName(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl bg-slate-950/50 border border-white/5 text-slate-200 placeholder-slate-600 focus:outline-none focus:border-emerald-500 text-xs"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-400 mb-1">Email Address</label>
+                <input
+                  type="email"
+                  required
+                  placeholder="john@example.com"
+                  value={newUserEmail}
+                  onChange={(e) => setNewUserEmail(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl bg-slate-950/50 border border-white/5 text-slate-200 placeholder-slate-600 focus:outline-none focus:border-emerald-500 text-xs"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-400 mb-1">Secure Password</label>
+                <input
+                  type="password"
+                  required
+                  placeholder="••••••••"
+                  value={newUserPass}
+                  onChange={(e) => setNewUserPass(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl bg-slate-950/50 border border-white/5 text-slate-200 placeholder-slate-600 focus:outline-none focus:border-emerald-500 text-xs"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-400 mb-1">System Role</label>
+                <select
+                  value={newUserRoleField}
+                  onChange={(e) => setNewUserRoleField(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl bg-slate-950/50 border border-white/5 text-slate-400 focus:outline-none text-xs"
+                >
+                  <option value="Employee">Employee</option>
+                  <option value="Manager">Manager</option>
+                  <option value="Admin">Admin</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-400 mb-1">Assign Workspace (Tenant)</label>
+                <select
+                  value={newUserTenantId}
+                  onChange={(e) => setNewUserTenantId(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl bg-slate-950/50 border border-white/5 text-slate-400 focus:outline-none text-xs"
+                >
+                  <option value="">None - Global Admin (Manage All)</option>
+                  {tenants.map((t) => (
+                    <option key={t._id} value={t._id}>
+                      {t.companyName || t.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-3 mt-2">
+              <button
+                type="button"
+                onClick={() => setShowCreateModal(false)}
+                className="px-4 py-2 rounded-xl text-slate-400 hover:bg-slate-800 text-xs font-semibold cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-slate-950 text-xs font-bold cursor-pointer transition-all"
+              >
+                Create Account
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
       {/* User Editing Modal */}
       {editingUser && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4">
@@ -397,7 +539,6 @@ const AdminPanel = () => {
                   <option value="Employee">Employee</option>
                   <option value="Manager">Manager</option>
                   <option value="Admin">Admin</option>
-                  <option value="Super Admin">Super Admin</option>
                 </select>
                 <button
                   onClick={() => handleUpdateRole(editingUser._id)}

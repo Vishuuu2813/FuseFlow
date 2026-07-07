@@ -6,9 +6,7 @@ const userSchema = new mongoose.Schema(
     tenantId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Tenant',
-      required: function () {
-        return this.role !== 'Super Admin'; // Super admins aren't tied to a specific tenant
-      },
+      required: false, // Optional for global admin accounts
     },
     name: {
       type: String,
@@ -28,7 +26,7 @@ const userSchema = new mongoose.Schema(
     },
     role: {
       type: String,
-      enum: ['Super Admin', 'Admin', 'Manager', 'Employee', 'Support', 'Customer'],
+      enum: ['Admin', 'Manager', 'Employee', 'Support', 'Customer'],
       default: 'Employee',
     },
     isActive: {

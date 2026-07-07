@@ -46,7 +46,7 @@ export const authenticate = async (req, res, next) => {
 };
 
 export const requireAdmin = (req, res, next) => {
-  if (!req.user || !['Super Admin', 'Admin'].includes(req.user.role)) {
+  if (!req.user || req.user.role !== 'Admin') {
     return res.status(403).json({ message: 'Forbidden. Administrative privileges required.' });
   }
   next();

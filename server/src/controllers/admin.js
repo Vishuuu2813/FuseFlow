@@ -42,6 +42,34 @@ export const getTenants = async (req, res, next) => {
   }
 };
 
+export const createUser = async (req, res, next) => {
+  try {
+    const { name, email, password, role, tenantId } = req.body;
+
+    if (!name || !email || !password || !role) {
+      return res.status(400).json({ message: 'Name, email, password, and role are required.' });
+    }
+
+    const existingUser = await User.findOne({ email });
+    if (existingUser) {
+      return res.status(400).json({ message: 'Email is already registered.' });
+    }
+
+    const newUser = await User.create({
+      name,
+      email,
+      passwordHash: password, // pre-save hashes this
+      role,
+      tenantId: tenantId || null,
+      isEmailVerified: true
+    });
+
+    res.status(201).json(newUser);
+  } catch (error) {
+    next(error);
+  }
+};
+
 export const updateUserStatus = async (req, res, next) => {
   try {
     const { isActive } = req.body;
@@ -50,7 +78,7 @@ export const updateUserStatus = async (req, res, next) => {
       return res.status(404).json({ message: 'User not found.' });
     }
 
-    // Prevent Super Admin self-banning
+    // Prevent Admin self-banning
     if (user._id.toString() === req.user._id.toString()) {
       return res.status(400).json({ message: 'You cannot suspend your own account.' });
     }
@@ -89,7 +117,6 @@ export const changeUserPassword = async (req, res, next) => {
       return res.status(404).json({ message: 'User not found.' });
     }
 
-    // Assigning new plain password; model pre-save will auto-hash it.
     user.passwordHash = password;
     await user.save();
 
@@ -140,7 +167,6 @@ export const adminChangePassword = async (req, res, next) => {
   try {
     const { oldPassword, newPassword } = req.body;
     
-    // Refresh user copy to query passwordHash
     const user = await User.findById(req.user._id);
     const isMatch = await user.comparePassword(oldPassword);
     if (!isMatch) {

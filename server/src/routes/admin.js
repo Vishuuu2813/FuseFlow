@@ -3,6 +3,7 @@ import {
   getAdminStats,
   getUsers,
   getTenants,
+  createUser,
   updateUserStatus,
   updateUserRole,
   changeUserPassword,
@@ -21,6 +22,7 @@ router.use(requireAdmin);
 router.get('/stats', getAdminStats);
 router.get('/users', getUsers);
 router.get('/tenants', getTenants);
+router.post('/users', createUser);
 
 router.put('/users/:id/status', updateUserStatus);
 router.put('/users/:id/role', updateUserRole);
