@@ -1,5 +1,5 @@
 import { Worker } from 'bullmq';
-import { redisConnection } from '../config/redis.js';
+import { redisConnection, getRedisStatus } from '../config/redis.js';
 import Campaign from '../models/Campaign.js';
 import MessageLog from '../models/MessageLog.js';
 import Contact from '../models/Contact.js';
@@ -20,10 +20,10 @@ const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const interpolateTemplate = (text, contact) => {
   if (!text) return '';
   let result = text;
-  // Replace standard {{name}} placeholder
+  // Replace name placeholders
   result = result.replace(/\{\{name\}\}/gi, contact.name || 'Customer');
   
-  // Replace custom variable keys
+  // Replace custom variables
   if (contact.variables) {
     for (const key of contact.variables.keys()) {
       const val = contact.variables.get(key) || '';
@@ -34,155 +34,120 @@ const interpolateTemplate = (text, contact) => {
   return result;
 };
 
-export const initCampaignWorker = () => {
-  const worker = new Worker(
-    'campaignQueue',
-    async (job) => {
-      const { campaignId, tenantId, whatsappSessionId, contactIds } = job.data;
+// Extracted campaign executor callable by both BullMQ worker and local in-memory fallback
+export const executeCampaignLogic = async (data) => {
+  const { campaignId, tenantId, whatsappSessionId, contactIds } = data;
 
-      // 1. Fetch campaign
-      const campaign = await Campaign.findById(campaignId);
-      if (!campaign || campaign.status === 'PAUSED' || campaign.status === 'COMPLETED') {
-        return;
-      }
+  try {
+    // 1. Fetch campaign
+    const campaign = await Campaign.findById(campaignId);
+    if (!campaign || campaign.status === 'PAUSED' || campaign.status === 'COMPLETED') {
+      return;
+    }
 
-      campaign.status = 'RUNNING';
-      await campaign.save();
+    campaign.status = 'RUNNING';
+    await campaign.save();
 
-      // 2. Resolve WhatsApp session connection
-      let sock = sessions[whatsappSessionId.toString()];
-      if (!sock) {
-        try {
-          sock = await connectToWhatsApp(tenantId, whatsappSessionId);
-        } catch (err) {
-          campaign.status = 'FAILED';
-          await campaign.save();
-          logger.error(`Campaign Worker: WhatsApp session connection failed for session ${whatsappSessionId}`);
-          return;
-        }
-      }
-
-      // Check if session status is connected
-      const sessionInfo = await sock.user;
-      if (!sessionInfo) {
+    // 2. Resolve WhatsApp session
+    let sock = sessions[whatsappSessionId.toString()];
+    if (!sock) {
+      try {
+        sock = await connectToWhatsApp(tenantId, whatsappSessionId);
+      } catch (err) {
         campaign.status = 'FAILED';
         await campaign.save();
+        logger.error(`Campaign Worker: WhatsApp session connection failed for session ${whatsappSessionId}`);
+        return;
+      }
+    }
+
+    // Check status
+    const sessionInfo = await sock.user;
+    if (!sessionInfo) {
+      campaign.status = 'FAILED';
+      await campaign.save();
+      return;
+    }
+
+    // 3. Fetch contacts
+    const contacts = await Contact.find({ _id: { $in: contactIds } });
+    let template = null;
+    if (campaign.templateId) {
+      template = await MessageTemplate.findById(campaign.templateId);
+    }
+
+    let sentCount = campaign.stats.sent;
+    let failedCount = campaign.stats.failed;
+    const startIndex = sentCount + failedCount;
+
+    for (let i = startIndex; i < contacts.length; i++) {
+      const contact = contacts[i];
+
+      // Check if paused mid-run
+      const currentCampaign = await Campaign.findById(campaignId);
+      if (!currentCampaign || currentCampaign.status === 'PAUSED') {
+        logger.info(`Campaign ${campaignId} was paused/cancelled. Stopping worker loop.`);
         return;
       }
 
-      // 3. Fetch contacts
-      const contacts = await Contact.find({ _id: { $in: contactIds } });
-      let template = null;
-      if (campaign.templateId) {
-        template = await MessageTemplate.findById(campaign.templateId);
+      const formattedJid = `${contact.phone.replace(/[^0-9]/g, '')}@s.whatsapp.net`;
+      let textToSend = campaign.messageText || '';
+      let mediaUrl = campaign.mediaUrl || '';
+      
+      if (template) {
+        textToSend = template.body;
+        mediaUrl = template.mediaUrl || '';
       }
 
-      let sentCount = campaign.stats.sent;
-      let failedCount = campaign.stats.failed;
+      textToSend = interpolateTemplate(textToSend, contact);
 
-      // Loop through contacts (resuming from sentCount + failedCount)
-      const startIndex = sentCount + failedCount;
-
-      for (let i = startIndex; i < contacts.length; i++) {
-        const contact = contacts[i];
-
-        // check if campaign was paused or deleted mid-execution
-        const currentCampaign = await Campaign.findById(campaignId);
-        if (!currentCampaign || currentCampaign.status === 'PAUSED') {
-          logger.info(`Campaign ${campaignId} was paused/cancelled. Stopping worker.`);
-          return;
-        }
-
-        // Format JID for WhatsApp message routing
-        const formattedJid = `${contact.phone.replace(/[^0-9]/g, '')}@s.whatsapp.net`;
+      try {
+        const messageOptions = {};
         
-        // Build message payload
-        let textToSend = campaign.messageText || '';
-        let mediaUrl = campaign.mediaUrl || '';
+        if (template && template.type === 'BUTTONS') {
+          messageOptions.text = textToSend;
+          if (template.footer) messageOptions.footer = template.footer;
+        } else {
+          messageOptions.text = textToSend;
+        }
+
+        if (mediaUrl) {
+          messageOptions.image = { url: mediaUrl };
+          messageOptions.caption = textToSend;
+          delete messageOptions.text;
+        }
+
+        const sentMsg = await sock.sendMessage(formattedJid, messageOptions);
+        sentCount++;
         
-        if (template) {
-          textToSend = template.body;
-          mediaUrl = template.mediaUrl || '';
-        }
-
-        // Personalize variables
-        textToSend = interpolateTemplate(textToSend, contact);
-
-        try {
-          const messageOptions = {};
-          
-          if (template && template.type === 'BUTTONS') {
-            // Rich messages or buttons
-            messageOptions.text = textToSend;
-            // Note: Baileys supports interactive buttons structure, but standard text + link works universally
-            if (template.footer) messageOptions.footer = template.footer;
-          } else {
-            messageOptions.text = textToSend;
-          }
-
-          if (mediaUrl) {
-            messageOptions.image = { url: mediaUrl };
-            messageOptions.caption = textToSend;
-            delete messageOptions.text; // caption replaces text in media messages
-          }
-
-          // Send message
-          const sentMsg = await sock.sendMessage(formattedJid, messageOptions);
-          
-          sentCount++;
-          
-          // Log success
-          await MessageLog.create({
-            tenantId,
-            campaignId,
-            whatsappSessionId,
-            phone: contact.phone,
-            messageText: textToSend,
-            mediaUrl,
-            status: 'SENT',
-            messageId: sentMsg.key.id,
-            sentAt: new Date(),
-          });
-
-        } catch (error) {
-          failedCount++;
-          
-          // Log failure
-          await MessageLog.create({
-            tenantId,
-            campaignId,
-            whatsappSessionId,
-            phone: contact.phone,
-            messageText: textToSend,
-            mediaUrl,
-            status: 'FAILED',
-            errorReason: error.message,
-          });
-        }
-
-        // Save progress to DB
-        campaign.stats.sent = sentCount;
-        campaign.stats.failed = failedCount;
-        await campaign.save();
-
-        // Broadcast stats via websockets
-        emitToTenant(tenantId, 'campaign-progress', {
+        await MessageLog.create({
+          tenantId,
           campaignId,
-          stats: {
-            total: contacts.length,
-            sent: sentCount,
-            failed: failedCount,
-          },
-          status: 'RUNNING',
+          whatsappSessionId,
+          phone: contact.phone,
+          messageText: textToSend,
+          mediaUrl,
+          status: 'SENT',
+          messageId: sentMsg.key.id,
+          sentAt: new Date(),
         });
-
-        // Anti-ban delay (5 - 8 seconds spacing)
-        const randomDelay = Math.floor(Math.random() * 3000) + 5000;
-        await delay(randomDelay);
+      } catch (error) {
+        failedCount++;
+        
+        await MessageLog.create({
+          tenantId,
+          campaignId,
+          whatsappSessionId,
+          phone: contact.phone,
+          messageText: textToSend,
+          mediaUrl,
+          status: 'FAILED',
+          errorReason: error.message,
+        });
       }
 
-      // Finish campaign
-      campaign.status = 'COMPLETED';
+      campaign.stats.sent = sentCount;
+      campaign.stats.failed = failedCount;
       await campaign.save();
 
       emitToTenant(tenantId, 'campaign-progress', {
@@ -192,18 +157,56 @@ export const initCampaignWorker = () => {
           sent: sentCount,
           failed: failedCount,
         },
-        status: 'COMPLETED',
+        status: 'RUNNING',
       });
-    },
-    {
-      connection: redisConnection,
-      concurrency: 2, // process 2 campaigns simultaneously
+
+      // Anti-ban spacing delay
+      const randomDelay = Math.floor(Math.random() * 3000) + 5000;
+      await delay(randomDelay);
     }
-  );
 
-  worker.on('failed', (job, err) => {
-    logger.error(`Campaign Job ${job.id} failed with error: ${err.message}`);
-  });
+    campaign.status = 'COMPLETED';
+    await campaign.save();
 
-  return worker;
+    emitToTenant(tenantId, 'campaign-progress', {
+      campaignId,
+      stats: {
+        total: contacts.length,
+        sent: sentCount,
+        failed: failedCount,
+      },
+      status: 'COMPLETED',
+    });
+  } catch (err) {
+    logger.error(`Error in executeCampaignLogic: ${err.message}`);
+  }
+};
+
+export const initCampaignWorker = () => {
+  if (!getRedisStatus()) {
+    logger.warn('Redis is offline. Skipping BullMQ Worker initialization (local in-memory fallback active).');
+    return null;
+  }
+
+  try {
+    const worker = new Worker(
+      'campaignQueue',
+      async (job) => {
+        await executeCampaignLogic(job.data);
+      },
+      {
+        connection: redisConnection,
+        concurrency: 2,
+      }
+    );
+
+    worker.on('failed', (job, err) => {
+      logger.error(`Campaign Job ${job.id} failed with error: ${err.message}`);
+    });
+
+    return worker;
+  } catch (err) {
+    logger.error(`Failed to initialize BullMQ Campaign Worker: ${err.message}`);
+    return null;
+  }
 };
