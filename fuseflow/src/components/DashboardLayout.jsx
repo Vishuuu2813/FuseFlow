@@ -127,7 +127,7 @@ const DashboardLayout = () => {
         </header>
 
         {/* Dynamic Route Content */}
-        <div className="p-8 max-w-7xl w-full mx-auto flex-1">
+        <div className="p-8 w-full flex-1">
           <Outlet />
         </div>
       </main>
