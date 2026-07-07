@@ -44,3 +44,11 @@ export const authenticate = async (req, res, next) => {
     return res.status(401).json({ message: 'Invalid token.' });
   }
 };
+
+export const requireAdmin = (req, res, next) => {
+  if (!req.user || !['Super Admin', 'Admin'].includes(req.user.role)) {
+    return res.status(403).json({ message: 'Forbidden. Administrative privileges required.' });
+  }
+  next();
+};
+

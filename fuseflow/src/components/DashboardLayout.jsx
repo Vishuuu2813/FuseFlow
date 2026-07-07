@@ -9,14 +9,15 @@ import {
   MessageSquare,
   Database,
   LogOut,
-  User
+  User,
+  Shield
 } from 'lucide-react';
-import { motion } from 'framer-motion';
 
 const SidebarLink = ({ to, icon: Icon, children }) => {
   return (
     <NavLink
       to={to}
+      end={to === '/dashboard'} // Ensures exact match for the index page to prevent double highlight
       className={({ isActive }) =>
         `flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 ${
           isActive
@@ -63,15 +64,20 @@ const DashboardLayout = () => {
               <p className="text-[10px] text-slate-500 font-medium tracking-wide">ENTERPRISE AUTOMATION</p>
             </div>
           </div>
-
+          
           {/* Navigation Links */}
           <nav className="flex flex-col gap-1.5">
-            <SidebarLink to="/" icon={LayoutDashboard}>Overview</SidebarLink>
-            <SidebarLink to="/sessions" icon={Smartphone}>WhatsApp Devices</SidebarLink>
-            <SidebarLink to="/contacts" icon={Users}>CRM & Contacts</SidebarLink>
-            <SidebarLink to="/campaigns" icon={Send}>Campaign Broadcaster</SidebarLink>
-            <SidebarLink to="/autoreply" icon={MessageSquare}>Auto Reply Rules</SidebarLink>
-            <SidebarLink to="/kb" icon={Database}>Knowledge Base</SidebarLink>
+            <SidebarLink to="/dashboard" icon={LayoutDashboard}>Overview</SidebarLink>
+            <SidebarLink to="/dashboard/sessions" icon={Smartphone}>WhatsApp Devices</SidebarLink>
+            <SidebarLink to="/dashboard/contacts" icon={Users}>CRM & Contacts</SidebarLink>
+            <SidebarLink to="/dashboard/campaigns" icon={Send}>Campaign Broadcaster</SidebarLink>
+            <SidebarLink to="/dashboard/autoreply" icon={MessageSquare}>Auto Reply Rules</SidebarLink>
+            <SidebarLink to="/dashboard/kb" icon={Database}>Knowledge Base</SidebarLink>
+            
+            {/* Conditional Admin Control Panel */}
+            {user && ['Super Admin', 'Admin'].includes(user.role) && (
+              <SidebarLink to="/dashboard/admin" icon={Shield}>Admin Panel</SidebarLink>
+            )}
           </nav>
         </div>
 
@@ -89,7 +95,7 @@ const DashboardLayout = () => {
 
           <button
             onClick={logout}
-            className="flex w-full items-center gap-3 px-4 py-3 rounded-xl text-slate-400 hover:text-red-400 hover:bg-red-500/5 transition-all duration-200"
+            className="flex w-full items-center gap-3 px-4 py-3 rounded-xl text-slate-400 hover:text-red-400 hover:bg-red-500/5 transition-all duration-200 cursor-pointer"
           >
             <LogOut size={20} />
             <span className="text-sm font-medium">Log Out</span>
@@ -102,11 +108,11 @@ const DashboardLayout = () => {
         {/* Top Navbar */}
         <header className="h-16 border-b border-white/5 px-8 flex items-center justify-between shrink-0 bg-slate-900/10 backdrop-blur-sm">
           <div>
-            <h2 className="text-sm font-medium text-slate-400">Workspace / <span className="text-slate-100 font-semibold">{tenant?.name}</span></h2>
+            <h2 className="text-sm font-medium text-slate-400">Workspace / <span className="text-slate-100 font-semibold">{tenant?.name || 'Admin Console'}</span></h2>
           </div>
           <div className="flex items-center gap-3">
             <span className="px-3 py-1 rounded-full text-[10px] font-semibold tracking-wider uppercase border border-emerald-500/20 bg-emerald-500/5 text-emerald-400">
-              {tenant?.plan} plan
+              {tenant?.plan || 'Admin'} plan
             </span>
           </div>
         </header>

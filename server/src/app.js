@@ -19,6 +19,7 @@ import contactRouter from './routes/contact.js';
 import campaignRouter from './routes/campaign.js';
 import autoReplyRouter from './routes/autoreply.js';
 import kbRouter from './routes/kb.js';
+import adminRouter from './routes/admin.js';
 
 const logger = pino({
   transport: {
@@ -55,6 +56,8 @@ app.use('/api/contacts', contactRouter);
 app.use('/api/campaigns', campaignRouter);
 app.use('/api/autoreply', autoReplyRouter);
 app.use('/api/kb', kbRouter);
+app.use('/api/admin', adminRouter);
+
 
 // Base Health Check
 app.get('/health', (req, res) => {
