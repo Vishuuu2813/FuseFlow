@@ -13,7 +13,6 @@ export const signup = async (req, res, next) => {
       return res.status(400).json({ message: 'All fields are required.' });
     }
 
-    // Check if email already registered
     const existingUser = await User.findOne({ email });
     if (existingUser) {
       return res.status(400).json({ message: 'Email is already registered.' });
@@ -284,3 +283,88 @@ export const adminLogin = async (req, res, next) => {
   }
 };
 
+// Workspace Users Management
+export const getTenantUsers = async (req, res, next) => {
+  try {
+    const tenantId = req.user.tenantId;
+    if (!tenantId) {
+      return res.status(400).json({ message: 'Global Admins do not belong to a workspace.' });
+    }
+
+    const users = await User.find({ tenantId }).sort({ createdAt: -1 });
+    res.json(users);
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const createTenantUser = async (req, res, next) => {
+  try {
+    const tenantId = req.user.tenantId;
+    if (!tenantId) {
+      return res.status(400).json({ message: 'Global Admins cannot create tenant users.' });
+    }
+
+    const { name, email, password, role } = req.body;
+    if (!name || !email || !password || !role) {
+      return res.status(400).json({ message: 'Name, email, password, and role are required.' });
+    }
+
+    const existingUser = await User.findOne({ email });
+    if (existingUser) {
+      return res.status(400).json({ message: 'Email is already registered.' });
+    }
+
+    const newUser = await User.create({
+      name,
+      email,
+      passwordHash: password,
+      role,
+      tenantId,
+      isEmailVerified: true
+    });
+
+    res.status(201).json(newUser);
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const updateTenantUser = async (req, res, next) => {
+  try {
+    const tenantId = req.user.tenantId;
+    const { role, isActive } = req.body;
+
+    const user = await User.findOne({ _id: req.params.id, tenantId });
+    if (!user) {
+      return res.status(404).json({ message: 'User not found in this workspace.' });
+    }
+
+    if (role) user.role = role;
+    if (isActive !== undefined) user.isActive = isActive;
+
+    await user.save();
+    res.json(user);
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const deleteTenantUser = async (req, res, next) => {
+  try {
+    const tenantId = req.user.tenantId;
+    const user = await User.findOne({ _id: req.params.id, tenantId });
+    if (!user) {
+      return res.status(404).json({ message: 'User not found in this workspace.' });
+    }
+
+    if (user._id.toString() === req.user._id.toString()) {
+      return res.status(400).json({ message: 'You cannot remove yourself.' });
+    }
+
+    await User.findByIdAndDelete(req.params.id);
+    res.json({ message: 'User removed from workspace.' });
+  } catch (error) {
+    next(error);
+  }
+};

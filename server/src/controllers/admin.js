@@ -2,7 +2,7 @@ import User from '../models/User.js';
 import Tenant from '../models/Tenant.js';
 import WhatsAppSession from '../models/WhatsAppSession.js';
 import MessageLog from '../models/MessageLog.js';
-import bcrypt from 'bcryptjs';
+import Plan from '../models/Plan.js';
 
 export const getAdminStats = async (req, res, next) => {
   try {
@@ -25,7 +25,7 @@ export const getAdminStats = async (req, res, next) => {
 export const getUsers = async (req, res, next) => {
   try {
     const users = await User.find()
-      .populate('tenantId', 'companyName plan')
+      .populate('tenantId', 'name companyName plan')
       .sort({ createdAt: -1 });
     res.json(users);
   } catch (error) {
@@ -152,8 +152,8 @@ export const updateTenantLimits = async (req, res, next) => {
       return res.status(404).json({ message: 'Tenant not found.' });
     }
 
-    if (deviceLimit !== undefined) tenant.deviceLimit = deviceLimit;
-    if (maxContacts !== undefined) tenant.maxContacts = maxContacts;
+    if (deviceLimit !== undefined) tenant.limits.maxDevices = deviceLimit;
+    if (maxContacts !== undefined) tenant.limits.maxStorageMb = maxContacts; // or other limits mapping
     if (plan !== undefined) tenant.plan = plan;
 
     await tenant.save();
@@ -177,6 +177,112 @@ export const adminChangePassword = async (req, res, next) => {
     await user.save();
 
     res.json({ message: 'Password changed successfully.' });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// Plan CRUD Endpoints
+export const getPlans = async (req, res, next) => {
+  try {
+    const plans = await Plan.find().sort({ createdAt: -1 });
+    res.json(plans);
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const createPlan = async (req, res, next) => {
+  try {
+    const { name, price, deviceLimit, maxContacts, maxMessagesPerMonth, maxAiCredits, maxStorageMb } = req.body;
+
+    if (!name || price === undefined) {
+      return res.status(400).json({ message: 'Plan name and price are required.' });
+    }
+
+    const existingPlan = await Plan.findOne({ name });
+    if (existingPlan) {
+      return res.status(400).json({ message: 'Plan name must be unique.' });
+    }
+
+    const newPlan = await Plan.create({
+      name,
+      price,
+      deviceLimit,
+      maxContacts,
+      maxMessagesPerMonth,
+      maxAiCredits,
+      maxStorageMb
+    });
+
+    res.status(201).json(newPlan);
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const updatePlan = async (req, res, next) => {
+  try {
+    const { name, price, deviceLimit, maxContacts, maxMessagesPerMonth, maxAiCredits, maxStorageMb } = req.body;
+    
+    const plan = await Plan.findById(req.params.id);
+    if (!plan) {
+      return res.status(404).json({ message: 'Plan not found.' });
+    }
+
+    if (name) plan.name = name;
+    if (price !== undefined) plan.price = price;
+    if (deviceLimit !== undefined) plan.deviceLimit = deviceLimit;
+    if (maxContacts !== undefined) plan.maxContacts = maxContacts;
+    if (maxMessagesPerMonth !== undefined) plan.maxMessagesPerMonth = maxMessagesPerMonth;
+    if (maxAiCredits !== undefined) plan.maxAiCredits = maxAiCredits;
+    if (maxStorageMb !== undefined) plan.maxStorageMb = maxStorageMb;
+
+    await plan.save();
+    res.json(plan);
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const deletePlan = async (req, res, next) => {
+  try {
+    const plan = await Plan.findById(req.params.id);
+    if (!plan) {
+      return res.status(404).json({ message: 'Plan not found.' });
+    }
+
+    await Plan.findByIdAndDelete(req.params.id);
+    res.json({ message: 'Plan deleted successfully.' });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const assignPlanToTenant = async (req, res, next) => {
+  try {
+    const { planId } = req.body;
+    const tenant = await Tenant.findById(req.params.id);
+    if (!tenant) {
+      return res.status(404).json({ message: 'Tenant not found.' });
+    }
+
+    const plan = await Plan.findById(planId);
+    if (!plan) {
+      return res.status(404).json({ message: 'Plan not found.' });
+    }
+
+    // Apply plan name and limits to the tenant
+    tenant.plan = plan.name;
+    tenant.limits = {
+      maxDevices: plan.deviceLimit,
+      maxMessagesPerMonth: plan.maxMessagesPerMonth,
+      maxAiCredits: plan.maxAiCredits,
+      maxStorageMb: plan.maxStorageMb
+    };
+
+    await tenant.save();
+    res.json(tenant);
   } catch (error) {
     next(error);
   }

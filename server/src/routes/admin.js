@@ -9,7 +9,12 @@ import {
   changeUserPassword,
   deleteUser,
   updateTenantLimits,
-  adminChangePassword
+  adminChangePassword,
+  getPlans,
+  createPlan,
+  updatePlan,
+  deletePlan,
+  assignPlanToTenant
 } from '../controllers/admin.js';
 import { authenticate, requireAdmin } from '../middleware/auth.js';
 
@@ -31,5 +36,12 @@ router.delete('/users/:id', deleteUser);
 
 router.put('/tenants/:id/limits', updateTenantLimits);
 router.put('/change-password', adminChangePassword);
+
+// Plan Routes
+router.get('/plans', getPlans);
+router.post('/plans', createPlan);
+router.put('/plans/:id', updatePlan);
+router.delete('/plans/:id', deletePlan);
+router.put('/tenants/:id/plan', assignPlanToTenant);
 
 export default router;

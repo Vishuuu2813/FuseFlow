@@ -13,6 +13,7 @@ import Contacts from './pages/Contacts';
 import Campaigns from './pages/Campaigns';
 import AutoReply from './pages/AutoReply';
 import KnowledgeBase from './pages/KnowledgeBase';
+import WorkspaceUsers from './pages/WorkspaceUsers';
 import AdminPanel from './pages/AdminPanel';
 
 function App() {
@@ -39,6 +40,7 @@ function App() {
             <Route path="campaigns" element={<Campaigns />} />
             <Route path="autoreply" element={<AutoReply />} />
             <Route path="kb" element={<KnowledgeBase />} />
+            <Route path="users" element={<WorkspaceUsers />} />
             <Route path="admin" element={<AdminPanel />} />
           </Route>
         </Routes>

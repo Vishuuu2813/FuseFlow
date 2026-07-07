@@ -17,7 +17,7 @@ const SidebarLink = ({ to, icon: Icon, children }) => {
   return (
     <NavLink
       to={to}
-      end={to === '/dashboard'} // Ensures exact match for the index page to prevent double highlight
+      end={to === '/dashboard'}
       className={({ isActive }) =>
         `flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 ${
           isActive
@@ -67,16 +67,20 @@ const DashboardLayout = () => {
           
           {/* Navigation Links */}
           <nav className="flex flex-col gap-1.5">
-            <SidebarLink to="/dashboard" icon={LayoutDashboard}>Overview</SidebarLink>
-            <SidebarLink to="/dashboard/sessions" icon={Smartphone}>WhatsApp Devices</SidebarLink>
-            <SidebarLink to="/dashboard/contacts" icon={Users}>CRM & Contacts</SidebarLink>
-            <SidebarLink to="/dashboard/campaigns" icon={Send}>Campaign Broadcaster</SidebarLink>
-            <SidebarLink to="/dashboard/autoreply" icon={MessageSquare}>Auto Reply Rules</SidebarLink>
-            <SidebarLink to="/dashboard/kb" icon={Database}>Knowledge Base</SidebarLink>
-            
-            {/* Conditional Admin Control Panel */}
-            {user && ['Super Admin', 'Admin'].includes(user.role) && (
+            {/* If user is Global Admin (no tenantId) */}
+            {!user.tenantId ? (
               <SidebarLink to="/dashboard/admin" icon={Shield}>Admin Panel</SidebarLink>
+            ) : (
+              // Workspace-Specific Sidebar Tabs
+              <>
+                <SidebarLink to="/dashboard" icon={LayoutDashboard}>Overview</SidebarLink>
+                <SidebarLink to="/dashboard/sessions" icon={Smartphone}>WhatsApp Devices</SidebarLink>
+                <SidebarLink to="/dashboard/contacts" icon={Users}>CRM & Contacts</SidebarLink>
+                <SidebarLink to="/dashboard/campaigns" icon={Send}>Campaign Broadcaster</SidebarLink>
+                <SidebarLink to="/dashboard/autoreply" icon={MessageSquare}>Auto Reply Rules</SidebarLink>
+                <SidebarLink to="/dashboard/kb" icon={Database}>Knowledge Base</SidebarLink>
+                <SidebarLink to="/dashboard/users" icon={Users}>Team Management</SidebarLink>
+              </>
             )}
           </nav>
         </div>

@@ -12,7 +12,9 @@ import {
   Edit2,
   Lock,
   UserPlus,
-  Plus
+  Plus,
+  Coins,
+  Settings
 } from 'lucide-react';
 
 const AdminPanel = () => {
@@ -23,26 +25,36 @@ const AdminPanel = () => {
     totalMessages: 0
   });
 
+  const [activeTab, setActiveTab] = useState('stats'); // 'stats', 'users', 'tenants', 'plans'
   const [users, setUsers] = useState([]);
   const [tenants, setTenants] = useState([]);
+  const [plans, setPlans] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
   
-  // Modals / Selection states
+  // User Modals / States
   const [editingUser, setEditingUser] = useState(null);
-  const [editingTenant, setEditingTenant] = useState(null);
   const [newUserRole, setNewUserRole] = useState('Employee');
   const [newUserPassword, setNewUserPassword] = useState('');
-  const [tenantDeviceLimit, setTenantDeviceLimit] = useState(3);
-  const [tenantMaxContacts, setTenantMaxContacts] = useState(10000);
-  const [tenantPlan, setTenantPlan] = useState('Professional');
-  
-  // Create User modal state
-  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showCreateUserModal, setShowCreateUserModal] = useState(false);
   const [newUserName, setNewUserName] = useState('');
   const [newUserEmail, setNewUserEmail] = useState('');
   const [newUserPass, setNewUserPass] = useState('');
   const [newUserRoleField, setNewUserRoleField] = useState('Employee');
   const [newUserTenantId, setNewUserTenantId] = useState('');
+
+  // Tenant Plan Assignment Modal / States
+  const [assigningTenant, setAssigningTenant] = useState(null);
+  const [selectedPlanId, setSelectedPlanId] = useState('');
+
+  // Plan Modals / States
+  const [showCreatePlanModal, setShowCreatePlanModal] = useState(false);
+  const [planName, setPlanName] = useState('');
+  const [planPrice, setPlanPrice] = useState(0);
+  const [planDeviceLimit, setPlanDeviceLimit] = useState(1);
+  const [planMaxContacts, setPlanMaxContacts] = useState(1000);
+  const [planMaxMessages, setPlanMaxMessages] = useState(500);
+  const [planMaxAi, setPlanMaxAi] = useState(50);
+  const [planMaxStorage, setPlanMaxStorage] = useState(100);
 
   // Admin Self password change state
   const [oldPassword, setOldPassword] = useState('');
@@ -62,6 +74,9 @@ const AdminPanel = () => {
 
       const tenantsRes = await api.get('/admin/tenants');
       setTenants(tenantsRes.data);
+
+      const plansRes = await api.get('/admin/plans');
+      setPlans(plansRes.data);
     } catch (err) {
       setError('Access Denied or failed to load administrative records.');
     }
@@ -130,17 +145,15 @@ const AdminPanel = () => {
 
       setUsers((prev) => [data, ...prev]);
       
-      // Reset form
       setNewUserName('');
       setNewUserEmail('');
       setNewUserPass('');
       setNewUserRoleField('Employee');
       setNewUserTenantId('');
       
-      setShowCreateModal(false);
+      setShowCreateUserModal(false);
       setSuccess('New user account created successfully.');
       
-      // Refresh stats
       const statsRes = await api.get('/admin/stats');
       setStats(statsRes.data);
     } catch (err) {
@@ -148,18 +161,58 @@ const AdminPanel = () => {
     }
   };
 
-  const handleUpdateTenantLimits = async (tenantId) => {
+  // Plan actions
+  const handleCreatePlanSubmit = async (e) => {
+    e.preventDefault();
+    setError('');
+    setSuccess('');
     try {
-      const { data } = await api.put(`/admin/tenants/${tenantId}/limits`, {
-        deviceLimit: tenantDeviceLimit,
-        maxContacts: tenantMaxContacts,
-        plan: tenantPlan
+      const { data } = await api.post('/admin/plans', {
+        name: planName,
+        price: planPrice,
+        deviceLimit: planDeviceLimit,
+        maxContacts: planMaxContacts,
+        maxMessagesPerMonth: planMaxMessages,
+        maxAiCredits: planMaxAi,
+        maxStorageMb: planMaxStorage
       });
-      setTenants((prev) => prev.map((t) => (t._id === tenantId ? data : t)));
-      setEditingTenant(null);
-      setSuccess('Tenant limits and plan updated successfully.');
+
+      setPlans((prev) => [data, ...prev]);
+      setPlanName('');
+      setPlanPrice(0);
+      setPlanDeviceLimit(1);
+      setPlanMaxContacts(1000);
+      setPlanMaxMessages(500);
+      setPlanMaxAi(50);
+      setPlanMaxStorage(100);
+      setShowCreatePlanModal(false);
+      setSuccess('Pricing plan created successfully.');
     } catch (err) {
-      setError('Failed to update tenant limits.');
+      setError(err.response?.data?.message || 'Failed to create plan.');
+    }
+  };
+
+  const handleDeletePlan = async (planId) => {
+    if (!window.confirm('Are you sure you want to delete this pricing plan?')) return;
+    try {
+      await api.delete(`/admin/plans/${planId}`);
+      setPlans((prev) => prev.filter((p) => p._id !== planId));
+      setSuccess('Plan deleted successfully.');
+    } catch (err) {
+      setError('Failed to delete plan.');
+    }
+  };
+
+  const handleAssignPlanSubmit = async (e) => {
+    e.preventDefault();
+    if (!selectedPlanId || !assigningTenant) return;
+    try {
+      const { data } = await api.put(`/admin/tenants/${assigningTenant._id}/plan`, { planId: selectedPlanId });
+      setTenants((prev) => prev.map((t) => (t._id === assigningTenant._id ? data : t)));
+      setAssigningTenant(null);
+      setSuccess('Plan assigned and tenant limits updated successfully.');
+    } catch (err) {
+      setError('Failed to assign plan to tenant.');
     }
   };
 
@@ -193,14 +246,26 @@ const AdminPanel = () => {
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
           <h1 className="text-2xl font-bold bg-gradient-to-r from-white to-slate-400 bg-clip-text text-transparent">Admin Command Center</h1>
-          <p className="text-slate-400 text-sm mt-1">Platform metrics, tenant limits, roles management, and access controls.</p>
+          <p className="text-slate-400 text-sm mt-1">Global platform metrics, tenant plans, user management, and plan creation.</p>
         </div>
-        <button
-          onClick={() => setShowCreateModal(true)}
-          className="px-4 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-slate-950 text-xs font-bold flex items-center gap-2 cursor-pointer shadow-lg shadow-emerald-500/20 transition-all hover:scale-[1.02]"
-        >
-          <UserPlus size={14} /> Create User Account
-        </button>
+        <div className="flex items-center gap-2">
+          {activeTab === 'users' && (
+            <button
+              onClick={() => setShowCreateUserModal(true)}
+              className="px-4 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-slate-950 text-xs font-bold flex items-center gap-2 cursor-pointer shadow-lg shadow-emerald-500/20 transition-all hover:scale-[1.02]"
+            >
+              <UserPlus size={14} /> Create User Account
+            </button>
+          )}
+          {activeTab === 'plans' && (
+            <button
+              onClick={() => setShowCreatePlanModal(true)}
+              className="px-4 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-slate-950 text-xs font-bold flex items-center gap-2 cursor-pointer shadow-lg shadow-emerald-500/20 transition-all hover:scale-[1.02]"
+            >
+              <Plus size={14} /> Create Plan
+            </button>
+          )}
+        </div>
       </div>
 
       {error && (
@@ -215,50 +280,184 @@ const AdminPanel = () => {
         </div>
       )}
 
-      {/* Metrics Grid */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-6">
-        <div className="backdrop-blur-md bg-slate-900/40 border border-white/5 p-6 rounded-2xl flex items-center justify-between">
-          <div>
-            <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Registered Users</span>
-            <p className="text-2xl font-bold text-slate-200 mt-1">{stats.totalUsers}</p>
-          </div>
-          <div className="p-3 rounded-xl bg-indigo-500/10 text-indigo-400"><Users size={20} /></div>
-        </div>
-
-        <div className="backdrop-blur-md bg-slate-900/40 border border-white/5 p-6 rounded-2xl flex items-center justify-between">
-          <div>
-            <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Active Tenants</span>
-            <p className="text-2xl font-bold text-slate-200 mt-1">{stats.totalTenants}</p>
-          </div>
-          <div className="p-3 rounded-xl bg-emerald-500/10 text-emerald-400"><Layers size={20} /></div>
-        </div>
-
-        <div className="backdrop-blur-md bg-slate-900/40 border border-white/5 p-6 rounded-2xl flex items-center justify-between">
-          <div>
-            <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">WhatsApp Devices</span>
-            <p className="text-2xl font-bold text-slate-200 mt-1">{stats.totalSessions}</p>
-          </div>
-          <div className="p-3 rounded-xl bg-amber-500/10 text-amber-400"><Shield size={20} /></div>
-        </div>
-
-        <div className="backdrop-blur-md bg-slate-900/40 border border-white/5 p-6 rounded-2xl flex items-center justify-between">
-          <div>
-            <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Messages Logged</span>
-            <p className="text-2xl font-bold text-slate-200 mt-1">{stats.totalMessages}</p>
-          </div>
-          <div className="p-3 rounded-xl bg-purple-500/10 text-purple-400"><Database size={20} /></div>
-        </div>
+      {/* Tabs Menu */}
+      <div className="flex gap-2 border-b border-white/5 pb-2">
+        <button
+          onClick={() => setActiveTab('stats')}
+          className={`px-4 py-2 text-xs font-semibold rounded-lg transition-all ${
+            activeTab === 'stats' ? 'bg-slate-800 text-white' : 'text-slate-500 hover:text-slate-300'
+          }`}
+        >
+          Overview & Security
+        </button>
+        <button
+          onClick={() => setActiveTab('tenants')}
+          className={`px-4 py-2 text-xs font-semibold rounded-lg transition-all ${
+            activeTab === 'tenants' ? 'bg-slate-800 text-white' : 'text-slate-500 hover:text-slate-300'
+          }`}
+        >
+          Workspaces (Tenants)
+        </button>
+        <button
+          onClick={() => setActiveTab('users')}
+          className={`px-4 py-2 text-xs font-semibold rounded-lg transition-all ${
+            activeTab === 'users' ? 'bg-slate-800 text-white' : 'text-slate-500 hover:text-slate-300'
+          }`}
+        >
+          System Users
+        </button>
+        <button
+          onClick={() => setActiveTab('plans')}
+          className={`px-4 py-2 text-xs font-semibold rounded-lg transition-all ${
+            activeTab === 'plans' ? 'bg-slate-800 text-white' : 'text-slate-500 hover:text-slate-300'
+          }`}
+        >
+          Pricing Plans
+        </button>
       </div>
 
-      {/* Main Tabs Container */}
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
-        
-        {/* Users & Roles Section (2 columns width) */}
-        <div className="xl:col-span-2 backdrop-blur-md bg-slate-900/20 border border-white/5 rounded-3xl p-6 flex flex-col gap-6">
-          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-            <h2 className="text-base font-bold text-slate-200">Global Users Directory</h2>
+      {/* Tab: Overview & Security */}
+      {activeTab === 'stats' && (
+        <div className="flex flex-col gap-8">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-6">
+            <div className="backdrop-blur-md bg-slate-900/40 border border-white/5 p-6 rounded-2xl flex items-center justify-between">
+              <div>
+                <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Registered Users</span>
+                <p className="text-2xl font-bold text-slate-200 mt-1">{stats.totalUsers}</p>
+              </div>
+              <div className="p-3 rounded-xl bg-indigo-500/10 text-indigo-400"><Users size={20} /></div>
+            </div>
+
+            <div className="backdrop-blur-md bg-slate-900/40 border border-white/5 p-6 rounded-2xl flex items-center justify-between">
+              <div>
+                <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Active Tenants</span>
+                <p className="text-2xl font-bold text-slate-200 mt-1">{stats.totalTenants}</p>
+              </div>
+              <div className="p-3 rounded-xl bg-emerald-500/10 text-emerald-400"><Layers size={20} /></div>
+            </div>
+
+            <div className="backdrop-blur-md bg-slate-900/40 border border-white/5 p-6 rounded-2xl flex items-center justify-between">
+              <div>
+                <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">WhatsApp Devices</span>
+                <p className="text-2xl font-bold text-slate-200 mt-1">{stats.totalSessions}</p>
+              </div>
+              <div className="p-3 rounded-xl bg-amber-500/10 text-amber-400"><Shield size={20} /></div>
+            </div>
+
+            <div className="backdrop-blur-md bg-slate-900/40 border border-white/5 p-6 rounded-2xl flex items-center justify-between">
+              <div>
+                <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Messages Logged</span>
+                <p className="text-2xl font-bold text-slate-200 mt-1">{stats.totalMessages}</p>
+              </div>
+              <div className="p-3 rounded-xl bg-purple-500/10 text-purple-400"><Database size={20} /></div>
+            </div>
+          </div>
+
+          <div className="max-w-md backdrop-blur-md bg-slate-900/20 border border-white/5 rounded-3xl p-6 flex flex-col gap-4">
+            <h2 className="text-base font-bold text-slate-200 flex items-center gap-2">
+              <Lock size={16} className="text-amber-400" /> Security Settings
+            </h2>
+            <p className="text-slate-500 text-xs leading-relaxed">Update your administrator password here regularly.</p>
             
-            <div className="relative w-full sm:w-64">
+            <form onSubmit={handleAdminChangePassword} className="flex flex-col gap-3.5 mt-2">
+              <div>
+                <label className="block text-[10px] font-semibold text-slate-500 mb-1">Current Password</label>
+                <input
+                  type="password"
+                  required
+                  value={oldPassword}
+                  onChange={(e) => setOldPassword(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl bg-slate-950/50 border border-white/5 text-slate-300 focus:outline-none focus:border-emerald-500 text-xs"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-semibold text-slate-500 mb-1">New Password</label>
+                <input
+                  type="password"
+                  required
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl bg-slate-950/50 border border-white/5 text-slate-300 focus:outline-none focus:border-emerald-500 text-xs"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-semibold text-slate-500 mb-1">Confirm New Password</label>
+                <input
+                  type="password"
+                  required
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl bg-slate-950/50 border border-white/5 text-slate-300 focus:outline-none focus:border-emerald-500 text-xs"
+                />
+              </div>
+
+              <button
+                type="submit"
+                className="w-full py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 text-xs font-bold cursor-pointer transition-colors mt-2"
+              >
+                Change Admin Password
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Tab: Tenants */}
+      {activeTab === 'tenants' && (
+        <div className="backdrop-blur-md bg-slate-900/20 border border-white/5 rounded-3xl p-6 flex flex-col gap-4">
+          <h2 className="text-base font-bold text-slate-200">Active Workspaces (Tenants)</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {tenants.map((t) => (
+              <div key={t._id} className="p-5 rounded-2xl bg-slate-950/40 border border-white/5 flex flex-col justify-between gap-4">
+                <div>
+                  <h4 className="font-bold text-slate-200 text-sm">{t.companyName || t.name}</h4>
+                  <span className="inline-block px-2.5 py-0.5 rounded-full text-[9px] font-extrabold uppercase bg-emerald-500/10 text-emerald-400 mt-2">
+                    {t.plan || 'Free'} Plan
+                  </span>
+                  
+                  <div className="mt-4 flex flex-col gap-1.5 text-xs text-slate-400">
+                    <div className="flex justify-between border-b border-white/5 pb-1">
+                      <span>WhatsApp Devices Limit:</span>
+                      <span className="font-semibold text-slate-200">{t.limits?.maxDevices || 1}</span>
+                    </div>
+                    <div className="flex justify-between border-b border-white/5 pb-1">
+                      <span>Monthly Messages limit:</span>
+                      <span className="font-semibold text-slate-200">{t.limits?.maxMessagesPerMonth || 500}</span>
+                    </div>
+                    <div className="flex justify-between border-b border-white/5 pb-1">
+                      <span>AI Credits Limit:</span>
+                      <span className="font-semibold text-slate-200">{t.limits?.maxAiCredits || 50}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Storage Allocation:</span>
+                      <span className="font-semibold text-slate-200">{t.limits?.maxStorageMb || 100} MB</span>
+                    </div>
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => {
+                    setAssigningTenant(t);
+                    setSelectedPlanId('');
+                  }}
+                  className="w-full py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs flex items-center justify-center gap-2 cursor-pointer transition-colors"
+                >
+                  <Settings size={14} /> Assign / Change Plan
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Tab: Users */}
+      {activeTab === 'users' && (
+        <div className="backdrop-blur-md bg-slate-900/20 border border-white/5 rounded-3xl p-6 flex flex-col gap-6">
+          <div className="flex justify-between items-center">
+            <h2 className="text-base font-bold text-slate-200">Global Users Directory</h2>
+            <div className="relative w-64">
               <Search className="absolute left-3 top-2.5 text-slate-500" size={16} />
               <input
                 type="text"
@@ -334,97 +533,209 @@ const AdminPanel = () => {
             </table>
           </div>
         </div>
+      )}
 
-        {/* Admin Self & Tenant Plans Config Column */}
-        <div className="flex flex-col gap-8">
-          
-          {/* Admin Password Change Form */}
-          <div className="backdrop-blur-md bg-slate-900/20 border border-white/5 rounded-3xl p-6 flex flex-col gap-4">
-            <h2 className="text-base font-bold text-slate-200 flex items-center gap-2">
-              <Lock size={16} className="text-amber-400" /> Security Settings
-            </h2>
-            <p className="text-slate-500 text-xs leading-relaxed">Update your administrator password here regularly.</p>
-            
-            <form onSubmit={handleAdminChangePassword} className="flex flex-col gap-3.5 mt-2">
-              <div>
-                <label className="block text-[10px] font-semibold text-slate-500 mb-1">Current Password</label>
+      {/* Tab: Plans */}
+      {activeTab === 'plans' && (
+        <div className="backdrop-blur-md bg-slate-900/20 border border-white/5 rounded-3xl p-6 flex flex-col gap-4">
+          <h2 className="text-base font-bold text-slate-200">Subscription Plans Catalog</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {plans.map((p) => (
+              <div key={p._id} className="p-5 rounded-2xl bg-slate-950/40 border border-white/5 flex flex-col justify-between gap-4">
+                <div>
+                  <h4 className="font-bold text-slate-200 text-base">{p.name}</h4>
+                  <div className="flex items-baseline gap-1 mt-1">
+                    <span className="text-xl font-extrabold text-indigo-400">${p.price}</span>
+                    <span className="text-[10px] text-slate-500">/ month</span>
+                  </div>
+                  
+                  <div className="mt-4 flex flex-col gap-1.5 text-xs text-slate-400">
+                    <div className="flex justify-between border-b border-white/5 pb-1">
+                      <span>WhatsApp Devices Limit:</span>
+                      <span className="font-semibold text-slate-200">{p.deviceLimit}</span>
+                    </div>
+                    <div className="flex justify-between border-b border-white/5 pb-1">
+                      <span>Monthly Messages limit:</span>
+                      <span className="font-semibold text-slate-200">{p.maxMessagesPerMonth}</span>
+                    </div>
+                    <div className="flex justify-between border-b border-white/5 pb-1">
+                      <span>AI Credits Limit:</span>
+                      <span className="font-semibold text-slate-200">{p.maxAiCredits}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Storage Allocation:</span>
+                      <span className="font-semibold text-slate-200">{p.maxStorageMb} MB</span>
+                    </div>
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => handleDeletePlan(p._id)}
+                  className="w-full py-2 rounded-xl bg-red-500/5 hover:bg-red-500/10 border border-red-500/10 text-red-500 font-bold text-xs flex items-center justify-center gap-2 cursor-pointer transition-colors"
+                >
+                  <Trash2 size={14} /> Delete Plan
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* CREATE PLAN MODAL */}
+      {showCreatePlanModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4">
+          <form onSubmit={handleCreatePlanSubmit} className="w-full max-w-md backdrop-blur-xl bg-slate-900 border border-white/5 shadow-2xl rounded-3xl p-6 flex flex-col gap-5">
+            <div>
+              <h3 className="text-base font-bold text-slate-200">Create Pricing Plan</h3>
+              <p className="text-slate-500 text-xs mt-1">Configure name, monthly price, limits and allowances.</p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3.5">
+              <div className="col-span-2">
+                <label className="block text-xs font-semibold text-slate-400 mb-1">Plan Name</label>
                 <input
-                  type="password"
+                  type="text"
                   required
-                  value={oldPassword}
-                  onChange={(e) => setOldPassword(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl bg-slate-950/50 border border-white/5 text-slate-300 focus:outline-none focus:border-emerald-500 text-xs"
+                  placeholder="Enterprise Pro"
+                  value={planName}
+                  onChange={(e) => setPlanName(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl bg-slate-950/50 border border-white/5 text-slate-200 focus:outline-none focus:border-emerald-500 text-xs"
                 />
               </div>
 
               <div>
-                <label className="block text-[10px] font-semibold text-slate-500 mb-1">New Password</label>
+                <label className="block text-xs font-semibold text-slate-400 mb-1">Price (USD)</label>
                 <input
-                  type="password"
+                  type="number"
                   required
-                  value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl bg-slate-950/50 border border-white/5 text-slate-300 focus:outline-none focus:border-emerald-500 text-xs"
+                  value={planPrice}
+                  onChange={(e) => setPlanPrice(parseFloat(e.target.value) || 0)}
+                  className="w-full px-3 py-2 rounded-xl bg-slate-950/50 border border-white/5 text-slate-200 focus:outline-none focus:border-emerald-500 text-xs"
                 />
               </div>
 
               <div>
-                <label className="block text-[10px] font-semibold text-slate-500 mb-1">Confirm New Password</label>
+                <label className="block text-xs font-semibold text-slate-400 mb-1">WhatsApp Devices</label>
                 <input
-                  type="password"
+                  type="number"
                   required
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl bg-slate-950/50 border border-white/5 text-slate-300 focus:outline-none focus:border-emerald-500 text-xs"
+                  value={planDeviceLimit}
+                  onChange={(e) => setPlanDeviceLimit(parseInt(e.target.value) || 1)}
+                  className="w-full px-3 py-2 rounded-xl bg-slate-950/50 border border-white/5 text-slate-200 focus:outline-none focus:border-emerald-500 text-xs"
                 />
               </div>
 
+              <div>
+                <label className="block text-xs font-semibold text-slate-400 mb-1">Max Contacts</label>
+                <input
+                  type="number"
+                  required
+                  value={planMaxContacts}
+                  onChange={(e) => setPlanMaxContacts(parseInt(e.target.value) || 1000)}
+                  className="w-full px-3 py-2 rounded-xl bg-slate-950/50 border border-white/5 text-slate-200 focus:outline-none focus:border-emerald-500 text-xs"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-400 mb-1">Messages / Month</label>
+                <input
+                  type="number"
+                  required
+                  value={planMaxMessages}
+                  onChange={(e) => setPlanMaxMessages(parseInt(e.target.value) || 500)}
+                  className="w-full px-3 py-2 rounded-xl bg-slate-950/50 border border-white/5 text-slate-200 focus:outline-none focus:border-emerald-500 text-xs"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-400 mb-1">AI Credits / Month</label>
+                <input
+                  type="number"
+                  required
+                  value={planMaxAi}
+                  onChange={(e) => setPlanMaxAi(parseInt(e.target.value) || 50)}
+                  className="w-full px-3 py-2 rounded-xl bg-slate-950/50 border border-white/5 text-slate-200 focus:outline-none focus:border-emerald-500 text-xs"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-400 mb-1">Storage Allocation (MB)</label>
+                <input
+                  type="number"
+                  required
+                  value={planMaxStorage}
+                  onChange={(e) => setPlanMaxStorage(parseInt(e.target.value) || 100)}
+                  className="w-full px-3 py-2 rounded-xl bg-slate-950/50 border border-white/5 text-slate-200 focus:outline-none focus:border-emerald-500 text-xs"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-3 mt-2">
+              <button
+                type="button"
+                onClick={() => setShowCreatePlanModal(false)}
+                className="px-4 py-2 rounded-xl text-slate-400 hover:bg-slate-800 text-xs font-semibold cursor-pointer"
+              >
+                Cancel
+              </button>
               <button
                 type="submit"
-                className="w-full py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 text-xs font-bold cursor-pointer transition-colors mt-2"
+                className="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-slate-950 text-xs font-bold cursor-pointer transition-all"
               >
-                Change Admin Password
+                Save Plan
               </button>
-            </form>
-          </div>
-
-          {/* Tenants Subscription Lists */}
-          <div className="backdrop-blur-md bg-slate-900/20 border border-white/5 rounded-3xl p-6 flex flex-col gap-4">
-            <h2 className="text-base font-bold text-slate-200">Subscription Plans</h2>
-            <div className="flex flex-col gap-4 mt-2">
-              {tenants.map((tenant) => (
-                <div key={tenant._id} className="p-4 rounded-2xl bg-slate-950/40 border border-white/5 flex items-center justify-between">
-                  <div>
-                    <h4 className="font-semibold text-slate-300 text-xs">{tenant.companyName || 'Business Organization'}</h4>
-                    <span className="text-[9px] uppercase tracking-wider font-bold text-indigo-400 mt-1 block">
-                      {tenant.plan || 'Free'} Plan
-                    </span>
-                    <span className="text-[10px] text-slate-500 mt-1 block">
-                      Devices: {tenant.deviceLimit} | Max Contacts: {tenant.maxContacts}
-                    </span>
-                  </div>
-                  <button
-                    onClick={() => {
-                      setEditingTenant(tenant);
-                      setTenantDeviceLimit(tenant.deviceLimit);
-                      setTenantMaxContacts(tenant.maxContacts);
-                      setTenantPlan(tenant.plan || 'Professional');
-                    }}
-                    className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 cursor-pointer"
-                  >
-                    <Edit2 size={12} />
-                  </button>
-                </div>
-              ))}
             </div>
-          </div>
-
+          </form>
         </div>
+      )}
 
-      </div>
+      {/* PLAN ASSIGNMENT MODAL */}
+      {assigningTenant && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4">
+          <form onSubmit={handleAssignPlanSubmit} className="w-full max-w-md backdrop-blur-xl bg-slate-900 border border-white/5 shadow-2xl rounded-3xl p-6 flex flex-col gap-5">
+            <div>
+              <h3 className="text-base font-bold text-slate-200">Assign Subscription Plan</h3>
+              <p className="text-slate-500 text-xs mt-1">Select a custom package to apply to {assigningTenant.companyName || assigningTenant.name}.</p>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-400 mb-1.5">Select Plan</label>
+              <select
+                required
+                value={selectedPlanId}
+                onChange={(e) => setSelectedPlanId(e.target.value)}
+                className="w-full px-3 py-2.5 rounded-xl bg-slate-950/50 border border-white/5 text-slate-300 focus:outline-none text-xs"
+              >
+                <option value="">-- Choose Plan --</option>
+                {plans.map((p) => (
+                  <option key={p._id} value={p._id}>
+                    {p.name} (${p.price}/mo)
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex items-center justify-end gap-3 mt-2">
+              <button
+                type="button"
+                onClick={() => setAssigningTenant(null)}
+                className="px-4 py-2 rounded-xl text-slate-400 hover:bg-slate-800 text-xs font-semibold cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-slate-950 text-xs font-bold cursor-pointer transition-all"
+              >
+                Assign Plan
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
 
       {/* CREATE USER MODAL */}
-      {showCreateModal && (
+      {showCreateUserModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4">
           <form onSubmit={handleCreateUserSubmit} className="w-full max-w-md backdrop-blur-xl bg-slate-900 border border-white/5 shadow-2xl rounded-3xl p-6 flex flex-col gap-5">
             <div>
@@ -502,7 +813,7 @@ const AdminPanel = () => {
             <div className="flex items-center justify-end gap-3 mt-2">
               <button
                 type="button"
-                onClick={() => setShowCreateModal(false)}
+                onClick={() => setShowCreateUserModal(false)}
                 className="px-4 py-2 rounded-xl text-slate-400 hover:bg-slate-800 text-xs font-semibold cursor-pointer"
               >
                 Cancel
@@ -575,68 +886,6 @@ const AdminPanel = () => {
             >
               Cancel
             </button>
-          </div>
-        </div>
-      )}
-
-      {/* Tenant Editing Modal */}
-      {editingTenant && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4">
-          <div className="w-full max-w-md backdrop-blur-xl bg-slate-900 border border-white/5 shadow-2xl rounded-3xl p-6 flex flex-col gap-6">
-            <div>
-              <h3 className="text-base font-bold text-slate-200">Edit Tier: {editingTenant.companyName}</h3>
-              <p className="text-slate-500 text-xs mt-1">Configure maximum active devices and limits.</p>
-            </div>
-
-            <div className="flex flex-col gap-4">
-              <div>
-                <label className="block text-xs font-semibold text-slate-400 mb-1.5">Subscription Plan</label>
-                <select
-                  value={tenantPlan}
-                  onChange={(e) => setTenantPlan(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl bg-slate-950/50 border border-white/5 text-slate-400 focus:outline-none text-xs"
-                >
-                  <option value="Basic">Basic</option>
-                  <option value="Professional">Professional</option>
-                  <option value="Enterprise">Enterprise</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-400 mb-1.5">Device Limit (Active Sessions)</label>
-                <input
-                  type="number"
-                  value={tenantDeviceLimit}
-                  onChange={(e) => setTenantDeviceLimit(parseInt(e.target.value) || 0)}
-                  className="w-full px-3 py-2 rounded-xl bg-slate-950/50 border border-white/5 text-slate-300 focus:outline-none text-xs"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-400 mb-1.5">Max Contact Records Allowed</label>
-                <input
-                  type="number"
-                  value={tenantMaxContacts}
-                  onChange={(e) => setTenantMaxContacts(parseInt(e.target.value) || 0)}
-                  className="w-full px-3 py-2 rounded-xl bg-slate-950/50 border border-white/5 text-slate-300 focus:outline-none text-xs"
-                />
-              </div>
-            </div>
-
-            <div className="flex items-center justify-end gap-3 mt-4">
-              <button
-                onClick={() => setEditingTenant(null)}
-                className="px-4 py-2 rounded-xl text-slate-400 hover:bg-slate-800 text-xs font-semibold cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => handleUpdateTenantLimits(editingTenant._id)}
-                className="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-slate-950 text-xs font-bold cursor-pointer transition-all"
-              >
-                Save Limits
-              </button>
-            </div>
           </div>
         </div>
       )}
