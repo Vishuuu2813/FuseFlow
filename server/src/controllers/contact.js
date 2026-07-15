@@ -1,5 +1,36 @@
 import Contact from '../models/Contact.js';
+import Tenant from '../models/Tenant.js';
 import ExcelJS from 'exceljs';
+
+const getContactLimit = (tenant) => {
+  return tenant?.limits?.maxContacts || tenant?.limits?.maxStorageMb || 1000;
+};
+
+const parseCsvLine = (line) => {
+  const values = [];
+  let current = '';
+  let inQuotes = false;
+
+  for (let i = 0; i < line.length; i++) {
+    const char = line[i];
+    const next = line[i + 1];
+
+    if (char === '"' && inQuotes && next === '"') {
+      current += '"';
+      i++;
+    } else if (char === '"') {
+      inQuotes = !inQuotes;
+    } else if (char === ',' && !inQuotes) {
+      values.push(current.trim());
+      current = '';
+    } else {
+      current += char;
+    }
+  }
+
+  values.push(current.trim());
+  return values;
+};
 
 export const getContacts = async (req, res, next) => {
   try {
@@ -46,6 +77,16 @@ export const createContact = async (req, res, next) => {
     }
 
     const cleanPhone = phone.replace(/[^0-9]/g, '');
+    if (cleanPhone.length < 8 || cleanPhone.length > 15) {
+      return res.status(400).json({ message: 'Phone number must contain 8 to 15 digits.' });
+    }
+
+    const tenant = await Tenant.findById(req.tenantId);
+    const maxContacts = getContactLimit(tenant);
+    const existingCount = await Contact.countDocuments({ tenantId: req.tenantId });
+    if (existingCount >= maxContacts) {
+      return res.status(403).json({ message: `Contact limit reached. Your plan allows ${maxContacts} contacts.` });
+    }
 
     // Check duplicate
     const existing = await Contact.findOne({ tenantId: req.tenantId, phone: cleanPhone });
@@ -61,6 +102,11 @@ export const createContact = async (req, res, next) => {
       labels: labels || [],
       stage: stage || 'lead',
       variables: variables || {},
+      consent: {
+        optIn: true,
+        optInSource: 'manual',
+        consentedAt: new Date()
+      },
     });
 
     res.status(201).json(contact);
@@ -136,6 +182,11 @@ export const importContacts = async (req, res, next) => {
             phone: cleanPhone,
             tags,
             stage: 'lead',
+            consent: {
+              optIn: true,
+              optInSource: 'import',
+              consentedAt: new Date()
+            },
           });
         }
       });
@@ -147,7 +198,7 @@ export const importContacts = async (req, res, next) => {
         const line = lines[i].trim();
         if (!line) continue;
 
-        const parts = line.split(',');
+        const parts = parseCsvLine(line);
         const name = parts[0]?.trim();
         const phone = parts[1]?.trim();
         const tagsString = parts[2]?.trim();
@@ -162,6 +213,11 @@ export const importContacts = async (req, res, next) => {
             phone: cleanPhone,
             tags,
             stage: 'lead',
+            consent: {
+              optIn: true,
+              optInSource: 'import',
+              consentedAt: new Date()
+            },
           });
         }
       }
@@ -169,6 +225,28 @@ export const importContacts = async (req, res, next) => {
 
     if (contactsToInsert.length === 0) {
       return res.status(400).json({ message: 'No valid contacts found in file.' });
+    }
+
+    const tenant = await Tenant.findById(req.tenantId);
+    const maxContacts = getContactLimit(tenant);
+    const existingCount = await Contact.countDocuments({ tenantId: req.tenantId });
+    const uniquePhones = [...new Set(contactsToInsert.map((contact) => contact.phone))];
+    const existingPhones = await Contact.find({
+      tenantId: req.tenantId,
+      phone: { $in: uniquePhones }
+    }).distinct('phone');
+    const existingPhoneSet = new Set(existingPhones);
+    const newPhonesCount = uniquePhones.filter((phone) => !existingPhoneSet.has(phone)).length;
+    const availableSlots = Math.max(maxContacts - existingCount, 0);
+
+    if (availableSlots <= 0) {
+      return res.status(403).json({ message: `Contact limit reached. Your plan allows ${maxContacts} contacts.` });
+    }
+
+    if (newPhonesCount > availableSlots) {
+      return res.status(403).json({
+        message: `Import exceeds contact limit. You can add ${availableSlots} more contact(s) on your current plan.`
+      });
     }
 
     // Insert contacts ignoring duplicates using MongoDB bulkWrite

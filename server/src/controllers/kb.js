@@ -1,11 +1,71 @@
 import KBData from '../models/KBData.js';
+import dns from 'dns/promises';
+import net from 'net';
+
+const isPrivateIp = (ip) => {
+  if (net.isIP(ip) === 4) {
+    const parts = ip.split('.').map(Number);
+    return (
+      parts[0] === 10 ||
+      parts[0] === 127 ||
+      (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) ||
+      (parts[0] === 192 && parts[1] === 168) ||
+      (parts[0] === 169 && parts[1] === 254) ||
+      parts[0] === 0
+    );
+  }
+
+  if (net.isIP(ip) === 6) {
+    const normalized = ip.toLowerCase();
+    return (
+      normalized === '::1' ||
+      normalized.startsWith('fc') ||
+      normalized.startsWith('fd') ||
+      normalized.startsWith('fe80:')
+    );
+  }
+
+  return true;
+};
+
+const assertSafeCrawlUrl = async (rawUrl) => {
+  let parsed;
+  try {
+    parsed = new URL(rawUrl);
+  } catch (error) {
+    throw new Error('Invalid website URL.');
+  }
+
+  if (!['http:', 'https:'].includes(parsed.protocol)) {
+    throw new Error('Only HTTP and HTTPS website URLs are allowed.');
+  }
+
+  const hostname = parsed.hostname.toLowerCase();
+  if (hostname === 'localhost' || hostname.endsWith('.localhost')) {
+    throw new Error('Localhost URLs are not allowed.');
+  }
+
+  const lookupResults = await dns.lookup(hostname, { all: true, verbatim: true });
+  if (!lookupResults.length || lookupResults.some((record) => isPrivateIp(record.address))) {
+    throw new Error('Private network URLs are not allowed.');
+  }
+
+  return parsed.toString();
+};
 
 const scrapeWebsiteText = async (url) => {
+  const safeUrl = await assertSafeCrawlUrl(url);
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
 
   try {
-    const res = await fetch(url, { signal: controller.signal });
+    const res = await fetch(safeUrl, {
+      signal: controller.signal,
+      redirect: 'error',
+      headers: {
+        'User-Agent': 'FuseFlow-KB-Crawler/1.0'
+      }
+    });
     clearTimeout(timeoutId);
 
     if (!res.ok) {

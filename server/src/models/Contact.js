@@ -35,6 +35,13 @@ const contactSchema = new mongoose.Schema(
       enum: ['lead', 'contact', 'demo', 'negotiation', 'won', 'lost'],
       default: 'lead',
     },
+    consent: {
+      optIn: { type: Boolean, default: true },
+      optInSource: { type: String, default: 'manual' },
+      consentedAt: { type: Date, default: Date.now },
+      optedOutAt: { type: Date, default: null },
+      optOutReason: { type: String, default: '' },
+    },
     notes: [noteSchema],
   },
   { timestamps: true }

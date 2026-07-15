@@ -5,6 +5,57 @@
   --font-sans: 'Inter', sans-serif;
   --font-display: 'Outfit', sans-serif;
   
+  --color-indigo-150: #dfe5ff;
+  --color-indigo-250: #c7d2fe;
+  --color-indigo-605: #5551df;
+  --color-indigo-606: #5450dc;
+  --color-indigo-607: #524ed9;
+  --color-indigo-608: #514dd6;
+  --color-indigo-609: #4f4bd3;
+  --color-indigo-610: #4e4ad0;
+  --color-indigo-650: #4338ca;
+  --color-indigo-655: #4034be;
+  --color-indigo-705: #372fa4;
+  --color-indigo-750: #312e81;
+  --color-indigo-755: #2f2c78;
+  --color-indigo-850: #1e1b4b;
+
+  --color-emerald-55: #edfdf5;
+  --color-emerald-150: #bdf4d1;
+  --color-emerald-250: #8ee7b3;
+  --color-emerald-605: #059669;
+  --color-emerald-650: #047857;
+  --color-emerald-655: #047151;
+  --color-emerald-705: #036143;
+
+  --color-slate-55: #f7f9fc;
+  --color-slate-150: #e8edf4;
+  --color-slate-205: #dbe2eb;
+  --color-slate-250: #cbd5e1;
+  --color-slate-405: #8b97a8;
+  --color-slate-450: #7c8798;
+  --color-slate-505: #687586;
+  --color-slate-550: #5f6b7a;
+  --color-slate-605: #526071;
+  --color-slate-650: #435166;
+  --color-slate-655: #405066;
+  --color-slate-750: #273449;
+  --color-slate-755: #253145;
+  --color-slate-805: #182337;
+  --color-slate-850: #111a2c;
+
+  --color-red-150: #fecaca;
+  --color-red-205: #fec7c7;
+  --color-red-550: #dc2626;
+  --color-red-650: #b91c1c;
+  --color-red-655: #b71f1f;
+
+  --color-amber-250: #f7d87b;
+  --color-amber-750: #92400e;
+  --color-blue-150: #bfdbfe;
+  --color-blue-750: #1d4ed8;
+  --color-purple-750: #6d28d9;
+
   --color-brand-50: #f0fdf4;
   --color-brand-100: #dcfce7;
   --color-brand-500: #128c7e; /* WhatsApp Teal-Green */
@@ -22,10 +73,40 @@
 body {
   margin: 0;
   font-family: var(--font-sans);
-  background-color: #f8fafc; /* clean slate-50 */
+  background-color: #f6f7fb;
   color: #0f172a; /* slate-900 */
   min-height: 100vh;
   overflow-x: hidden;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+button,
+a,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button,
+a {
+  -webkit-tap-highlight-color: transparent;
+}
+
+.ff-dark {
+  color-scheme: dark;
+}
+
+.ff-dark main header {
+  background: rgba(15, 23, 42, 0.92);
+  border-color: rgba(51, 65, 85, 0.9);
+}
+
+.ff-dark main > div {
+  background: radial-gradient(circle at top left, rgba(79, 70, 229, 0.18), transparent 30%),
+    linear-gradient(180deg, #0f172a 0%, #111827 100%);
 }
 
 /* Scrollbar styling */

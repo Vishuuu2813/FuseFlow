@@ -12,14 +12,21 @@ const logger = pino({
 const activeCampaigns = new Map();
 
 export const addCampaignJob = async (campaignId, data) => {
-  logger.info(`[In-Memory Queue] Scheduling campaign ${campaignId}...`);
-  
   const jobId = campaignId.toString();
   
   // Cancel if already scheduled to avoid double runs
   if (activeCampaigns.has(jobId)) {
     clearTimeout(activeCampaigns.get(jobId));
   }
+
+  // Calculate delay based on scheduledAt if provided
+  let delayMs = 0;
+  if (data.scheduledAt) {
+    const scheduledTime = new Date(data.scheduledAt).getTime();
+    delayMs = Math.max(0, scheduledTime - Date.now());
+  }
+
+  logger.info(`[In-Memory Queue] Scheduling campaign ${campaignId} with delay of ${delayMs}ms...`);
 
   const timeoutId = setTimeout(async () => {
     try {
@@ -28,7 +35,7 @@ export const addCampaignJob = async (campaignId, data) => {
     } catch (err) {
       logger.error(`In-Memory Campaign execution failed: ${err.message}`);
     }
-  }, 0);
+  }, delayMs);
 
   activeCampaigns.set(jobId, timeoutId);
   return { id: jobId };
@@ -41,4 +48,8 @@ export const cancelCampaignJob = async (campaignId) => {
     clearTimeout(activeCampaigns.get(jobId));
     activeCampaigns.delete(jobId);
   }
+};
+
+export const isCampaignJobActive = (campaignId) => {
+  return activeCampaigns.has(campaignId.toString());
 };

@@ -2,6 +2,7 @@ import Campaign from '../models/Campaign.js';
 import MessageLog from '../models/MessageLog.js';
 import Contact from '../models/Contact.js';
 import MessageTemplate from '../models/MessageTemplate.js';
+import Tenant from '../models/Tenant.js';
 import { sessions, connectToWhatsApp } from '../services/whatsapp.js';
 import { emitToTenant } from '../socket.js';
 import pino from 'pino';
@@ -14,6 +15,19 @@ const logger = pino({
 });
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const getUsageWindows = () => {
+  const startOfDay = new Date();
+  startOfDay.setHours(0, 0, 0, 0);
+  const endOfDay = new Date();
+  endOfDay.setHours(23, 59, 59, 999);
+
+  const startOfMonth = new Date();
+  startOfMonth.setDate(1);
+  startOfMonth.setHours(0, 0, 0, 0);
+
+  return { startOfDay, endOfDay, startOfMonth };
+};
 
 const interpolateTemplate = (text, contact) => {
   if (!text) return '';
@@ -74,12 +88,76 @@ export const executeCampaignLogic = async (data) => {
       template = await MessageTemplate.findById(campaign.templateId);
     }
 
-    let sentCount = campaign.stats.sent;
-    let failedCount = campaign.stats.failed;
-    const startIndex = sentCount + failedCount;
+    const [sentLikeCount, failedLikeCount, loggedCount] = await Promise.all([
+      MessageLog.countDocuments({ campaignId, status: { $in: ['SENT', 'DELIVERED', 'READ'] } }),
+      MessageLog.countDocuments({ campaignId, status: 'FAILED' }),
+      MessageLog.countDocuments({ campaignId, status: { $in: ['SENT', 'DELIVERED', 'READ', 'FAILED'] } })
+    ]);
+
+    let sentCount = Math.max(campaign.stats.sent || 0, sentLikeCount);
+    let failedCount = Math.max(campaign.stats.failed || 0, failedLikeCount);
+    const startIndex = Math.min(loggedCount, contacts.length);
+
+    campaign.stats.sent = sentCount;
+    campaign.stats.failed = failedCount;
+    await campaign.save();
 
     for (let i = startIndex; i < contacts.length; i++) {
       const contact = contacts[i];
+
+      // Check daily limit
+      const tenant = await Tenant.findById(tenantId);
+      const dailyLimit = tenant?.limits?.dailyMessageLimit || 100;
+      const monthlyLimit = tenant?.limits?.maxMessagesPerMonth || 500;
+      const { startOfDay, endOfDay, startOfMonth } = getUsageWindows();
+
+      const sentToday = await MessageLog.countDocuments({
+        tenantId,
+        status: 'SENT',
+        createdAt: { $gte: startOfDay, $lte: endOfDay }
+      });
+
+      if (sentToday >= dailyLimit) {
+        logger.info(`Campaign ${campaignId} paused: daily message limit of ${dailyLimit} reached.`);
+        campaign.status = 'PAUSED';
+        await campaign.save();
+        
+        emitToTenant(tenantId, 'campaign-progress', {
+          campaignId,
+          stats: {
+            total: contacts.length,
+            sent: sentCount,
+            failed: failedCount,
+          },
+          status: 'PAUSED',
+          error: `Daily message quota of ${dailyLimit} exceeded.`
+        });
+        return;
+      }
+
+      const sentThisMonth = await MessageLog.countDocuments({
+        tenantId,
+        status: 'SENT',
+        createdAt: { $gte: startOfMonth }
+      });
+
+      if (sentThisMonth >= monthlyLimit) {
+        logger.info(`Campaign ${campaignId} paused: monthly message limit of ${monthlyLimit} reached.`);
+        campaign.status = 'PAUSED';
+        await campaign.save();
+
+        emitToTenant(tenantId, 'campaign-progress', {
+          campaignId,
+          stats: {
+            total: contacts.length,
+            sent: sentCount,
+            failed: failedCount,
+          },
+          status: 'PAUSED',
+          error: `Monthly message quota of ${monthlyLimit} exceeded.`
+        });
+        return;
+      }
 
       // Check if paused mid-run
       const currentCampaign = await Campaign.findById(campaignId);
@@ -98,6 +176,35 @@ export const executeCampaignLogic = async (data) => {
       }
 
       textToSend = interpolateTemplate(textToSend, contact);
+
+      const existingLog = await MessageLog.findOne({
+        campaignId,
+        phone: contact.phone,
+        status: { $in: ['SENT', 'DELIVERED', 'READ'] }
+      }).select('_id status');
+
+      if (existingLog) {
+        continue;
+      }
+
+      if (contact.consent?.optIn === false) {
+        failedCount++;
+        await MessageLog.create({
+          tenantId,
+          campaignId,
+          whatsappSessionId,
+          phone: contact.phone,
+          messageText: textToSend,
+          mediaUrl,
+          status: 'FAILED',
+          errorReason: 'Contact opted out of messages.',
+        });
+
+        campaign.stats.sent = sentCount;
+        campaign.stats.failed = failedCount;
+        await campaign.save();
+        continue;
+      }
 
       try {
         const messageOptions = {};
@@ -129,6 +236,10 @@ export const executeCampaignLogic = async (data) => {
           messageId: sentMsg.key.id,
           sentAt: new Date(),
         });
+
+        await Tenant.findByIdAndUpdate(tenantId, {
+          $inc: { 'usage.messagesSentThisMonth': 1 }
+        });
       } catch (error) {
         failedCount++;
         
@@ -158,9 +269,14 @@ export const executeCampaignLogic = async (data) => {
         status: 'RUNNING',
       });
 
-      // Anti-ban spacing delay
-      const randomDelay = Math.floor(Math.random() * 3000) + 5000;
-      await delay(randomDelay);
+      // Dynamic message dispatch delay configured by user or tenant plan limits
+      const spacingSeconds = Math.max(
+        campaign.delaySeconds || tenant?.limits?.defaultDelaySeconds || 5,
+        tenant?.limits?.minimumDelaySeconds || 3
+      );
+      const jitterMs = Math.floor(Math.random() * 1500);
+      const msgDelay = spacingSeconds * 1000 + jitterMs;
+      await delay(msgDelay);
     }
 
     campaign.status = 'COMPLETED';

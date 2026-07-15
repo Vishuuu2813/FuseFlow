@@ -38,6 +38,36 @@ const planSchema = new mongoose.Schema(
       required: true,
       default: 100,
     },
+    dailyMessageLimit: {
+      type: Number,
+      required: true,
+      default: 100,
+    },
+    defaultDelaySeconds: {
+      type: Number,
+      required: true,
+      default: 5,
+    },
+    validityDays: {
+      type: Number,
+      required: true,
+      default: 30,
+    },
+    bulkScheduling: {
+      type: Boolean,
+      required: true,
+      default: true,
+    },
+    flowBuilder: {
+      type: Boolean,
+      required: true,
+      default: true,
+    },
+    aiAutoReply: {
+      type: Boolean,
+      required: true,
+      default: true,
+    },
   },
   { timestamps: true }
 );

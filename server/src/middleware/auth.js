@@ -1,8 +1,15 @@
 import jwt from 'jsonwebtoken';
 import User from '../models/User.js';
+import { isPlatformAdmin } from './access.js';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'super_secret_jwt_access_key_whatsflow_2026';
 const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || 'super_secret_jwt_refresh_key_whatsflow_2026';
+
+if (process.env.NODE_ENV === 'production') {
+  if (!process.env.JWT_SECRET || !process.env.JWT_REFRESH_SECRET) {
+    throw new Error('JWT_SECRET and JWT_REFRESH_SECRET must be configured in production.');
+  }
+}
 
 export const generateAccessToken = (user) => {
   return jwt.sign(
@@ -46,9 +53,8 @@ export const authenticate = async (req, res, next) => {
 };
 
 export const requireAdmin = (req, res, next) => {
-  if (!req.user || req.user.role !== 'Admin') {
-    return res.status(403).json({ message: 'Forbidden. Administrative privileges required.' });
+  if (!isPlatformAdmin(req.user)) {
+    return res.status(403).json({ message: 'Forbidden. Platform administrator privileges required.' });
   }
   next();
 };
-

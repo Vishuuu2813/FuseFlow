@@ -11,6 +11,17 @@ const AdminTenants = () => {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
+  const [customLimitsEnabled, setCustomLimitsEnabled] = useState(false);
+  const [maxDevices, setMaxDevices] = useState(1);
+  const [maxMessages, setMaxMessages] = useState(500);
+  const [maxAi, setMaxAi] = useState(50);
+  const [maxStorage, setMaxStorage] = useState(100);
+  const [dailyLimit, setDailyLimit] = useState(100);
+  const [delaySec, setDelaySec] = useState(5);
+  const [bulkScheduling, setBulkScheduling] = useState(true);
+  const [flowBuilder, setFlowBuilder] = useState(true);
+  const [aiAutoReply, setAiAutoReply] = useState(true);
+
   const fetchTenantsData = async () => {
     try {
       const tenantsRes = await api.get('/admin/tenants');
@@ -27,13 +38,45 @@ const AdminTenants = () => {
     fetchTenantsData();
   }, []);
 
+  const handlePlanChange = (planId) => {
+    setSelectedPlanId(planId);
+    const plan = plans.find(p => p._id === planId);
+    if (plan) {
+      setMaxDevices(plan.deviceLimit || 1);
+      setMaxMessages(plan.maxMessagesPerMonth || 500);
+      setMaxAi(plan.maxAiCredits || 50);
+      setMaxStorage(plan.maxStorageMb || 100);
+      setDailyLimit(plan.dailyMessageLimit || 100);
+      setDelaySec(plan.defaultDelaySeconds || 5);
+      setBulkScheduling(plan.bulkScheduling !== false);
+      setFlowBuilder(plan.flowBuilder !== false);
+      setAiAutoReply(plan.aiAutoReply !== false);
+    }
+  };
+
   const handleAssignPlanSubmit = async (e) => {
     e.preventDefault();
     if (!selectedPlanId || !assigningTenant) return;
     try {
-      const { data } = await api.put(`/admin/tenants/${assigningTenant._id}/plan`, { planId: selectedPlanId });
+      const payload = { planId: selectedPlanId };
+      if (customLimitsEnabled) {
+        payload.customLimits = {
+          maxDevices,
+          maxMessagesPerMonth: maxMessages,
+          maxAiCredits: maxAi,
+          maxStorageMb: maxStorage,
+          dailyMessageLimit: dailyLimit,
+          defaultDelaySeconds: delaySec,
+          bulkScheduling,
+          flowBuilder,
+          aiAutoReply
+        };
+      }
+
+      const { data } = await api.put(`/admin/tenants/${assigningTenant._id}/plan`, payload);
       setTenants((prev) => prev.map((t) => (t._id === assigningTenant._id ? data : t)));
       setAssigningTenant(null);
+      setCustomLimitsEnabled(false);
       setSuccess('Plan updated and limits successfully synced.');
     } catch (err) {
       setError('Failed to update workspace plan.');
@@ -56,13 +99,13 @@ const AdminTenants = () => {
       </div>
 
       {error && (
-        <div className="p-3.5 rounded-xl border border-red-200 bg-red-50 text-red-600 text-sm font-semibold">
+        <div className="p-3.5 rounded-xl border border-red-200 bg-red-50 text-red-655 text-sm font-semibold">
           {error}
         </div>
       )}
 
       {success && (
-        <div className="p-3.5 rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-700 text-sm font-semibold">
+        <div className="p-3.5 rounded-xl border border-emerald-250 bg-emerald-50 text-emerald-700 text-sm font-semibold">
           {success}
         </div>
       )}
@@ -99,7 +142,7 @@ const AdminTenants = () => {
                 <tr key={t._id} className="text-slate-700 hover:bg-slate-50/50">
                   <td className="py-4 font-bold text-slate-850">{t.name || t.companyName}</td>
                   <td className="py-4">
-                    <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-55 text-emerald-700 uppercase tracking-wide border border-emerald-100">
+                    <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 uppercase tracking-wide border border-emerald-100">
                       {t.plan || 'Free'}
                     </span>
                   </td>
@@ -111,6 +154,7 @@ const AdminTenants = () => {
                       onClick={() => {
                         setAssigningTenant(t);
                         setSelectedPlanId('');
+                        setCustomLimitsEnabled(false);
                       }}
                       className="px-3.5 py-1.5 rounded-lg bg-slate-100 hover:bg-emerald-50 hover:text-emerald-700 border border-slate-200 hover:border-emerald-250 font-bold text-xs flex items-center gap-1.5 ml-auto cursor-pointer transition-colors"
                     >
@@ -126,8 +170,8 @@ const AdminTenants = () => {
 
       {/* PLAN ASSIGNMENT DIALOG */}
       {assigningTenant && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 backdrop-blur-sm p-4">
-          <form onSubmit={handleAssignPlanSubmit} className="w-full max-w-md bg-white border border-slate-200 shadow-2xl rounded-3xl p-6 flex flex-col gap-5">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 backdrop-blur-sm p-4 overflow-y-auto">
+          <form onSubmit={handleAssignPlanSubmit} className="w-full max-w-lg bg-white border border-slate-200 shadow-2xl rounded-3xl p-6 flex flex-col gap-5 my-8">
             <div>
               <h3 className="text-lg font-bold text-slate-850">Assign Subscription Package</h3>
               <p className="text-slate-550 text-sm mt-1">Select pricing tier to apply to {assigningTenant.name}.</p>
@@ -138,8 +182,8 @@ const AdminTenants = () => {
               <select
                 required
                 value={selectedPlanId}
-                onChange={(e) => setSelectedPlanId(e.target.value)}
-                className="w-full px-3 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-slate-700 text-sm focus:outline-none focus:border-emerald-600"
+                onChange={(e) => handlePlanChange(e.target.value)}
+                className="w-full px-3 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-slate-700 text-sm focus:outline-none focus:border-emerald-600 font-semibold cursor-pointer"
               >
                 <option value="">-- Select custom plan --</option>
                 {plans.map((p) => (
@@ -150,17 +194,125 @@ const AdminTenants = () => {
               </select>
             </div>
 
-            <div className="flex items-center justify-end gap-3 mt-2">
+            {selectedPlanId && (
+              <div className="flex flex-col gap-3">
+                <label className="flex items-center gap-2 cursor-pointer py-1">
+                  <input
+                    type="checkbox"
+                    checked={customLimitsEnabled}
+                    onChange={(e) => setCustomLimitsEnabled(e.target.checked)}
+                    className="rounded text-emerald-600 focus:ring-emerald-500 h-4.5 w-4.5"
+                  />
+                  <span className="text-xs font-bold text-slate-700">Customize plan features & limits for this tenant</span>
+                </label>
+
+                {customLimitsEnabled && (
+                  <div className="border-t border-slate-100 pt-4 flex flex-col gap-4">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-500 mb-1 uppercase">Devices Limit</label>
+                        <input
+                          type="number"
+                          value={maxDevices}
+                          onChange={(e) => setMaxDevices(parseInt(e.target.value) || 1)}
+                          className="w-full px-3 py-2 text-xs rounded-xl bg-slate-50 border border-slate-200 font-semibold"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-500 mb-1 uppercase">Monthly Messages</label>
+                        <input
+                          type="number"
+                          value={maxMessages}
+                          onChange={(e) => setMaxMessages(parseInt(e.target.value) || 500)}
+                          className="w-full px-3 py-2 text-xs rounded-xl bg-slate-50 border border-slate-200 font-semibold"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-500 mb-1 uppercase">AI Credits Quota</label>
+                        <input
+                          type="number"
+                          value={maxAi}
+                          onChange={(e) => setMaxAi(parseInt(e.target.value) || 50)}
+                          className="w-full px-3 py-2 text-xs rounded-xl bg-slate-50 border border-slate-200 font-semibold"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-500 mb-1 uppercase">Storage (MB)</label>
+                        <input
+                          type="number"
+                          value={maxStorage}
+                          onChange={(e) => setMaxStorage(parseInt(e.target.value) || 100)}
+                          className="w-full px-3 py-2 text-xs rounded-xl bg-slate-50 border border-slate-200 font-semibold"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-500 mb-1 uppercase">Daily Messages Limit</label>
+                        <input
+                          type="number"
+                          value={dailyLimit}
+                          onChange={(e) => setDailyLimit(parseInt(e.target.value) || 100)}
+                          className="w-full px-3 py-2 text-xs rounded-xl bg-slate-50 border border-slate-200 font-semibold"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-500 mb-1 uppercase">Default Delay (Sec)</label>
+                        <input
+                          type="number"
+                          value={delaySec}
+                          onChange={(e) => setDelaySec(parseInt(e.target.value) || 5)}
+                          className="w-full px-3 py-2 text-xs rounded-xl bg-slate-50 border border-slate-200 font-semibold"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="border-t border-slate-100 pt-3">
+                      <span className="block text-[10px] font-bold text-slate-500 mb-2 uppercase">Custom Feature Access</span>
+                      <div className="grid grid-cols-3 gap-2">
+                        <label className="flex items-center gap-1.5 cursor-pointer p-2 bg-slate-50 rounded-lg border border-slate-200 text-[10px] font-bold text-slate-650 hover:bg-slate-100">
+                          <input
+                            type="checkbox"
+                            checked={bulkScheduling}
+                            onChange={(e) => setBulkScheduling(e.target.checked)}
+                            className="rounded text-emerald-600 focus:ring-emerald-500"
+                          />
+                          <span>Bulk Send</span>
+                        </label>
+                        <label className="flex items-center gap-1.5 cursor-pointer p-2 bg-slate-50 rounded-lg border border-slate-200 text-[10px] font-bold text-slate-650 hover:bg-slate-100">
+                          <input
+                            type="checkbox"
+                            checked={flowBuilder}
+                            onChange={(e) => setFlowBuilder(e.target.checked)}
+                            className="rounded text-emerald-600 focus:ring-emerald-500"
+                          />
+                          <span>Flows</span>
+                        </label>
+                        <label className="flex items-center gap-1.5 cursor-pointer p-2 bg-slate-50 rounded-lg border border-slate-200 text-[10px] font-bold text-slate-650 hover:bg-slate-100">
+                          <input
+                            type="checkbox"
+                            checked={aiAutoReply}
+                            onChange={(e) => setAiAutoReply(e.target.checked)}
+                            className="rounded text-emerald-600 focus:ring-emerald-500"
+                          />
+                          <span>AI Chat</span>
+                        </label>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className="flex items-center justify-end gap-3 mt-2 border-t border-slate-100 pt-4">
               <button
                 type="button"
                 onClick={() => setAssigningTenant(null)}
-                className="px-4 py-2 rounded-xl text-slate-500 hover:bg-slate-100 text-sm font-semibold cursor-pointer"
+                className="px-4 py-2 rounded-xl text-slate-550 hover:bg-slate-100 text-sm font-semibold cursor-pointer"
               >
                 Cancel
               </button>
               <button
                 type="submit"
-                className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold cursor-pointer transition-colors"
+                className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold cursor-pointer transition-colors shadow-md shadow-emerald-600/10"
               >
                 Assign Plan
               </button>

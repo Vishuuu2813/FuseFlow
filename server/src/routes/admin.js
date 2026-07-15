@@ -1,11 +1,13 @@
 import express from 'express';
 import {
   getAdminStats,
+  getAuditLogs,
   getUsers,
   getTenants,
   createUser,
   updateUserStatus,
   updateUserRole,
+  updateUserPermissions,
   changeUserPassword,
   deleteUser,
   updateTenantLimits,
@@ -14,7 +16,8 @@ import {
   createPlan,
   updatePlan,
   deletePlan,
-  assignPlanToTenant
+  assignPlanToTenant,
+  getTenantUsage
 } from '../controllers/admin.js';
 import { authenticate, requireAdmin } from '../middleware/auth.js';
 
@@ -25,12 +28,14 @@ router.use(authenticate);
 router.use(requireAdmin);
 
 router.get('/stats', getAdminStats);
+router.get('/audit', getAuditLogs);
 router.get('/users', getUsers);
 router.get('/tenants', getTenants);
 router.post('/users', createUser);
 
 router.put('/users/:id/status', updateUserStatus);
 router.put('/users/:id/role', updateUserRole);
+router.put('/users/:id/permissions', updateUserPermissions);
 router.put('/users/:id/password', changeUserPassword);
 router.delete('/users/:id', deleteUser);
 
@@ -43,5 +48,6 @@ router.post('/plans', createPlan);
 router.put('/plans/:id', updatePlan);
 router.delete('/plans/:id', deletePlan);
 router.put('/tenants/:id/plan', assignPlanToTenant);
+router.get('/tenants/:id/usage', getTenantUsage);
 
 export default router;

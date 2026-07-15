@@ -32,6 +32,20 @@ const campaignSchema = new mongoose.Schema(
       enum: ['DRAFT', 'SCHEDULED', 'RUNNING', 'PAUSED', 'COMPLETED', 'FAILED'],
       default: 'DRAFT',
     },
+    delaySeconds: {
+      type: Number,
+      default: 5,
+    },
+    targetCriteria: {
+      type: {
+        type: String,
+        enum: ['ALL', 'STAGE', 'TAG', 'MANUAL'],
+        default: 'ALL',
+      },
+      stage: { type: String, default: '' },
+      tag: { type: String, default: '' },
+      contactIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Contact' }],
+    },
     scheduledAt: {
       type: Date,
       default: Date.now,

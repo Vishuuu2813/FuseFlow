@@ -3,6 +3,16 @@ import Tenant from '../models/Tenant.js';
 import WhatsAppSession from '../models/WhatsAppSession.js';
 import MessageLog from '../models/MessageLog.js';
 import Plan from '../models/Plan.js';
+import Contact from '../models/Contact.js';
+import AuditLog from '../models/AuditLog.js';
+import { writeAuditLog } from '../services/audit.js';
+
+const isStrongPassword = (password) => {
+  return typeof password === 'string' &&
+    password.length >= 8 &&
+    /[A-Za-z]/.test(password) &&
+    /\d/.test(password);
+};
 
 export const getAdminStats = async (req, res, next) => {
   try {
@@ -42,12 +52,52 @@ export const getTenants = async (req, res, next) => {
   }
 };
 
+export const getAuditLogs = async (req, res, next) => {
+  try {
+    const { tenantId, action, page = 1, limit = 50 } = req.query;
+    const query = {};
+
+    if (tenantId) query.tenantId = tenantId;
+    if (action) query.action = action;
+
+    const safeLimit = Math.min(parseInt(limit, 10) || 50, 200);
+    const safePage = Math.max(parseInt(page, 10) || 1, 1);
+    const skip = (safePage - 1) * safeLimit;
+
+    const [logs, total] = await Promise.all([
+      AuditLog.find(query)
+        .populate('tenantId', 'name plan')
+        .populate('actorId', 'name email role')
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(safeLimit),
+      AuditLog.countDocuments(query)
+    ]);
+
+    res.json({
+      logs,
+      pagination: {
+        total,
+        page: safePage,
+        limit: safeLimit,
+        pages: Math.ceil(total / safeLimit)
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 export const createUser = async (req, res, next) => {
   try {
     const { name, email, password, role, tenantId } = req.body;
 
     if (!name || !email || !password || !role) {
       return res.status(400).json({ message: 'Name, email, password, and role are required.' });
+    }
+
+    if (!isStrongPassword(password)) {
+      return res.status(400).json({ message: 'Password must be at least 8 characters and include letters and numbers.' });
     }
 
     const existingUser = await User.findOne({ email });
@@ -62,6 +112,14 @@ export const createUser = async (req, res, next) => {
       role,
       tenantId: tenantId || null,
       isEmailVerified: true
+    });
+
+    await writeAuditLog(req, {
+      action: 'ADMIN_USER_CREATED',
+      entityType: 'User',
+      entityId: newUser._id,
+      tenantId: newUser.tenantId || null,
+      metadata: { email: newUser.email, role: newUser.role }
     });
 
     res.status(201).json(newUser);
@@ -86,6 +144,14 @@ export const updateUserStatus = async (req, res, next) => {
     user.isActive = isActive;
     await user.save();
 
+    await writeAuditLog(req, {
+      action: isActive ? 'USER_ACTIVATED' : 'USER_SUSPENDED',
+      entityType: 'User',
+      entityId: user._id,
+      tenantId: user.tenantId || null,
+      metadata: { email: user.email }
+    });
+
     res.json({ message: 'User status updated successfully.', isActive: user.isActive });
   } catch (error) {
     next(error);
@@ -103,7 +169,103 @@ export const updateUserRole = async (req, res, next) => {
     user.role = role;
     await user.save();
 
+    await writeAuditLog(req, {
+      action: 'USER_ROLE_UPDATED',
+      entityType: 'User',
+      entityId: user._id,
+      tenantId: user.tenantId || null,
+      metadata: { email: user.email, role }
+    });
+
     res.json({ message: 'User role updated successfully.', role: user.role });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const updateUserPermissions = async (req, res, next) => {
+  try {
+    const { permissions } = req.body;
+    const user = await User.findById(req.params.id);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found.' });
+    }
+
+    const prevPerms = JSON.parse(JSON.stringify(user.permissions || {}));
+    const auditEntries = [];
+
+    user.permissions = {
+      sendMessage: permissions?.sendMessage !== false,
+      sendMessageNote: permissions?.sendMessageNote || '',
+      sendMessageExpiresAt: permissions?.sendMessageExpiresAt ? new Date(permissions.sendMessageExpiresAt) : null,
+
+      bulkScheduling: permissions?.bulkScheduling !== false,
+      bulkSchedulingNote: permissions?.bulkSchedulingNote || '',
+      bulkSchedulingExpiresAt: permissions?.bulkSchedulingExpiresAt ? new Date(permissions.bulkSchedulingExpiresAt) : null,
+
+      smartBroadcast: permissions?.smartBroadcast !== false,
+      smartBroadcastNote: permissions?.smartBroadcastNote || '',
+      smartBroadcastExpiresAt: permissions?.smartBroadcastExpiresAt ? new Date(permissions.smartBroadcastExpiresAt) : null,
+
+      flowBuilder: permissions?.flowBuilder !== false,
+      flowBuilderNote: permissions?.flowBuilderNote || '',
+      flowBuilderExpiresAt: permissions?.flowBuilderExpiresAt ? new Date(permissions.flowBuilderExpiresAt) : null,
+
+      aiAutoReply: permissions?.aiAutoReply !== false,
+      aiAutoReplyNote: permissions?.aiAutoReplyNote || '',
+      aiAutoReplyExpiresAt: permissions?.aiAutoReplyExpiresAt ? new Date(permissions.aiAutoReplyExpiresAt) : null,
+
+      messageLogs: permissions?.messageLogs !== false,
+      messageLogsNote: permissions?.messageLogsNote || '',
+      messageLogsExpiresAt: permissions?.messageLogsExpiresAt ? new Date(permissions.messageLogsExpiresAt) : null,
+
+      contacts: permissions?.contacts !== false,
+      contactsNote: permissions?.contactsNote || '',
+      contactsExpiresAt: permissions?.contactsExpiresAt ? new Date(permissions.contactsExpiresAt) : null,
+
+      kb: permissions?.kb !== false,
+      kbNote: permissions?.kbNote || '',
+      kbExpiresAt: permissions?.kbExpiresAt ? new Date(permissions.kbExpiresAt) : null
+    };
+
+    const keys = [
+      'sendMessage',
+      'bulkScheduling',
+      'smartBroadcast',
+      'flowBuilder',
+      'aiAutoReply',
+      'messageLogs',
+      'contacts',
+      'kb'
+    ];
+
+    keys.forEach(k => {
+      const isAllowed = user.permissions[k];
+      const prevAllowed = prevPerms[k] !== false;
+      if (isAllowed !== prevAllowed) {
+        auditEntries.push({
+          changedBy: req.user?.name || 'Platform Admin',
+          action: `${isAllowed ? 'UNLOCKED' : 'LOCKED'} access to ${k.replace(/([A-Z])/g, ' $1')}`,
+          note: user.permissions[`${k}Note`] || 'State updated',
+          timestamp: new Date()
+        });
+      }
+    });
+
+    if (auditEntries.length > 0) {
+      if (!user.permissionAuditLogs) user.permissionAuditLogs = [];
+      user.permissionAuditLogs.push(...auditEntries);
+    }
+
+    await user.save();
+    await writeAuditLog(req, {
+      action: 'USER_PERMISSIONS_UPDATED',
+      entityType: 'User',
+      entityId: user._id,
+      tenantId: user.tenantId || null,
+      metadata: { email: user.email }
+    });
+    res.json({ message: 'User permissions updated successfully.', permissions: user.permissions, permissionAuditLogs: user.permissionAuditLogs });
   } catch (error) {
     next(error);
   }
@@ -117,8 +279,20 @@ export const changeUserPassword = async (req, res, next) => {
       return res.status(404).json({ message: 'User not found.' });
     }
 
+    if (!isStrongPassword(password)) {
+      return res.status(400).json({ message: 'Password must be at least 8 characters and include letters and numbers.' });
+    }
+
     user.passwordHash = password;
     await user.save();
+
+    await writeAuditLog(req, {
+      action: 'USER_PASSWORD_RESET',
+      entityType: 'User',
+      entityId: user._id,
+      tenantId: user.tenantId || null,
+      metadata: { email: user.email }
+    });
 
     res.json({ message: 'User password reset successfully.' });
   } catch (error) {
@@ -138,6 +312,13 @@ export const deleteUser = async (req, res, next) => {
     }
 
     await User.findByIdAndDelete(req.params.id);
+    await writeAuditLog(req, {
+      action: 'USER_DELETED',
+      entityType: 'User',
+      entityId: user._id,
+      tenantId: user.tenantId || null,
+      metadata: { email: user.email }
+    });
     res.json({ message: 'User deleted successfully.' });
   } catch (error) {
     next(error);
@@ -157,6 +338,13 @@ export const updateTenantLimits = async (req, res, next) => {
     if (plan !== undefined) tenant.plan = plan;
 
     await tenant.save();
+    await writeAuditLog(req, {
+      action: 'TENANT_LIMITS_UPDATED',
+      entityType: 'Tenant',
+      entityId: tenant._id,
+      tenantId: tenant._id,
+      metadata: { deviceLimit, maxContacts, plan }
+    });
     res.json(tenant);
   } catch (error) {
     next(error);
@@ -168,6 +356,10 @@ export const adminChangePassword = async (req, res, next) => {
     const { oldPassword, newPassword } = req.body;
     
     const user = await User.findById(req.user._id);
+    if (!isStrongPassword(newPassword)) {
+      return res.status(400).json({ message: 'New password must be at least 8 characters and include letters and numbers.' });
+    }
+
     const isMatch = await user.comparePassword(oldPassword);
     if (!isMatch) {
       return res.status(400).json({ message: 'Incorrect current password.' });
@@ -194,7 +386,7 @@ export const getPlans = async (req, res, next) => {
 
 export const createPlan = async (req, res, next) => {
   try {
-    const { name, price, deviceLimit, maxContacts, maxMessagesPerMonth, maxAiCredits, maxStorageMb } = req.body;
+    const { name, price, deviceLimit, maxContacts, maxMessagesPerMonth, maxAiCredits, maxStorageMb, dailyMessageLimit, defaultDelaySeconds, validityDays, bulkScheduling, flowBuilder, aiAutoReply } = req.body;
 
     if (!name || price === undefined) {
       return res.status(400).json({ message: 'Plan name and price are required.' });
@@ -212,8 +404,46 @@ export const createPlan = async (req, res, next) => {
       maxContacts,
       maxMessagesPerMonth,
       maxAiCredits,
-      maxStorageMb
+      maxStorageMb,
+      dailyMessageLimit: dailyMessageLimit !== undefined ? dailyMessageLimit : 100,
+      defaultDelaySeconds: defaultDelaySeconds !== undefined ? defaultDelaySeconds : 5,
+      validityDays: validityDays !== undefined ? validityDays : 30,
+      bulkScheduling: bulkScheduling !== undefined ? bulkScheduling : true,
+      flowBuilder: flowBuilder !== undefined ? flowBuilder : true,
+      aiAutoReply: aiAutoReply !== undefined ? aiAutoReply : true
     });
+
+    await writeAuditLog(req, {
+      action: 'PLAN_CREATED',
+      entityType: 'Plan',
+      entityId: newPlan._id,
+      metadata: { name: newPlan.name, price: newPlan.price }
+    });
+
+    // Propagate limits to all existing tenants on this plan (e.g. trial) who do not have custom limits override
+    await Tenant.updateMany(
+      { 
+        plan: { $regex: new RegExp(`^${newPlan.name}$`, 'i') },
+        $or: [
+          { 'limits.isCustomLimits': { $exists: false } },
+          { 'limits.isCustomLimits': false }
+        ]
+      },
+      {
+        $set: {
+          'limits.maxDevices': newPlan.deviceLimit,
+          'limits.maxContacts': newPlan.maxContacts || 1000,
+          'limits.maxMessagesPerMonth': newPlan.maxMessagesPerMonth,
+          'limits.maxAiCredits': newPlan.maxAiCredits,
+          'limits.maxStorageMb': newPlan.maxStorageMb,
+          'limits.dailyMessageLimit': newPlan.dailyMessageLimit || 100,
+          'limits.defaultDelaySeconds': newPlan.defaultDelaySeconds || 5,
+          'limits.bulkScheduling': newPlan.bulkScheduling !== false,
+          'limits.flowBuilder': newPlan.flowBuilder !== false,
+          'limits.aiAutoReply': newPlan.aiAutoReply !== false
+        }
+      }
+    );
 
     res.status(201).json(newPlan);
   } catch (error) {
@@ -223,12 +453,14 @@ export const createPlan = async (req, res, next) => {
 
 export const updatePlan = async (req, res, next) => {
   try {
-    const { name, price, deviceLimit, maxContacts, maxMessagesPerMonth, maxAiCredits, maxStorageMb } = req.body;
+    const { name, price, deviceLimit, maxContacts, maxMessagesPerMonth, maxAiCredits, maxStorageMb, dailyMessageLimit, defaultDelaySeconds, validityDays, bulkScheduling, flowBuilder, aiAutoReply } = req.body;
     
     const plan = await Plan.findById(req.params.id);
     if (!plan) {
       return res.status(404).json({ message: 'Plan not found.' });
     }
+
+    const oldName = plan.name;
 
     if (name) plan.name = name;
     if (price !== undefined) plan.price = price;
@@ -237,8 +469,48 @@ export const updatePlan = async (req, res, next) => {
     if (maxMessagesPerMonth !== undefined) plan.maxMessagesPerMonth = maxMessagesPerMonth;
     if (maxAiCredits !== undefined) plan.maxAiCredits = maxAiCredits;
     if (maxStorageMb !== undefined) plan.maxStorageMb = maxStorageMb;
+    if (dailyMessageLimit !== undefined) plan.dailyMessageLimit = dailyMessageLimit;
+    if (defaultDelaySeconds !== undefined) plan.defaultDelaySeconds = defaultDelaySeconds;
+    if (validityDays !== undefined) plan.validityDays = validityDays;
+    if (bulkScheduling !== undefined) plan.bulkScheduling = bulkScheduling;
+    if (flowBuilder !== undefined) plan.flowBuilder = flowBuilder;
+    if (aiAutoReply !== undefined) plan.aiAutoReply = aiAutoReply;
 
     await plan.save();
+    await writeAuditLog(req, {
+      action: 'PLAN_UPDATED',
+      entityType: 'Plan',
+      entityId: plan._id,
+      metadata: { name: plan.name }
+    });
+
+    // Propagate limits to all tenants on this plan
+    const updateObj = {
+      $set: {
+        'limits.maxDevices': plan.deviceLimit,
+        'limits.maxContacts': plan.maxContacts || 1000,
+        'limits.maxMessagesPerMonth': plan.maxMessagesPerMonth,
+        'limits.maxAiCredits': plan.maxAiCredits,
+        'limits.maxStorageMb': plan.maxStorageMb,
+        'limits.dailyMessageLimit': plan.dailyMessageLimit || 100,
+        'limits.defaultDelaySeconds': plan.defaultDelaySeconds || 5,
+        'limits.bulkScheduling': plan.bulkScheduling !== false,
+        'limits.flowBuilder': plan.flowBuilder !== false,
+        'limits.aiAutoReply': plan.aiAutoReply !== false
+      }
+    };
+    if (name) {
+      updateObj.$set.plan = plan.name;
+    }
+
+    await Tenant.updateMany({ 
+      plan: { $regex: new RegExp(`^${oldName}$`, 'i') },
+      $or: [
+        { 'limits.isCustomLimits': { $exists: false } },
+        { 'limits.isCustomLimits': false }
+      ]
+    }, updateObj);
+
     res.json(plan);
   } catch (error) {
     next(error);
@@ -253,6 +525,12 @@ export const deletePlan = async (req, res, next) => {
     }
 
     await Plan.findByIdAndDelete(req.params.id);
+    await writeAuditLog(req, {
+      action: 'PLAN_DELETED',
+      entityType: 'Plan',
+      entityId: plan._id,
+      metadata: { name: plan.name }
+    });
     res.json({ message: 'Plan deleted successfully.' });
   } catch (error) {
     next(error);
@@ -261,7 +539,7 @@ export const deletePlan = async (req, res, next) => {
 
 export const assignPlanToTenant = async (req, res, next) => {
   try {
-    const { planId } = req.body;
+    const { planId, planStartDate, planExpiresAt, extraDays, customLimits } = req.body;
     const tenant = await Tenant.findById(req.params.id);
     if (!tenant) {
       return res.status(404).json({ message: 'Tenant not found.' });
@@ -272,17 +550,118 @@ export const assignPlanToTenant = async (req, res, next) => {
       return res.status(404).json({ message: 'Plan not found.' });
     }
 
-    // Apply plan name and limits to the tenant
+    const isCustom = customLimits && (
+      (customLimits.maxDevices !== undefined && parseInt(customLimits.maxDevices) !== plan.deviceLimit) ||
+      (customLimits.maxContacts !== undefined && parseInt(customLimits.maxContacts) !== (plan.maxContacts || 1000)) ||
+      (customLimits.maxMessagesPerMonth !== undefined && parseInt(customLimits.maxMessagesPerMonth) !== plan.maxMessagesPerMonth) ||
+      (customLimits.maxAiCredits !== undefined && parseInt(customLimits.maxAiCredits) !== plan.maxAiCredits) ||
+      (customLimits.maxStorageMb !== undefined && parseInt(customLimits.maxStorageMb) !== plan.maxStorageMb) ||
+      (customLimits.dailyMessageLimit !== undefined && parseInt(customLimits.dailyMessageLimit) !== (plan.dailyMessageLimit || 100)) ||
+      (customLimits.defaultDelaySeconds !== undefined && parseInt(customLimits.defaultDelaySeconds) !== (plan.defaultDelaySeconds || 5))
+    );
+
+    // Apply plan name and limits to the tenant, checking for custom limits override
     tenant.plan = plan.name;
     tenant.limits = {
-      maxDevices: plan.deviceLimit,
-      maxMessagesPerMonth: plan.maxMessagesPerMonth,
-      maxAiCredits: plan.maxAiCredits,
-      maxStorageMb: plan.maxStorageMb
+      maxDevices: customLimits?.maxDevices !== undefined ? parseInt(customLimits.maxDevices) : plan.deviceLimit,
+      maxContacts: customLimits?.maxContacts !== undefined ? parseInt(customLimits.maxContacts) : (plan.maxContacts || 1000),
+      maxMessagesPerMonth: customLimits?.maxMessagesPerMonth !== undefined ? parseInt(customLimits.maxMessagesPerMonth) : plan.maxMessagesPerMonth,
+      maxAiCredits: customLimits?.maxAiCredits !== undefined ? parseInt(customLimits.maxAiCredits) : plan.maxAiCredits,
+      maxStorageMb: customLimits?.maxStorageMb !== undefined ? parseInt(customLimits.maxStorageMb) : plan.maxStorageMb,
+      dailyMessageLimit: customLimits?.dailyMessageLimit !== undefined ? parseInt(customLimits.dailyMessageLimit) : (plan.dailyMessageLimit || 100),
+      defaultDelaySeconds: customLimits?.defaultDelaySeconds !== undefined ? parseInt(customLimits.defaultDelaySeconds) : (plan.defaultDelaySeconds || 5),
+      bulkScheduling: customLimits?.bulkScheduling !== undefined ? !!customLimits.bulkScheduling : (plan.bulkScheduling !== undefined ? plan.bulkScheduling : true),
+      flowBuilder: customLimits?.flowBuilder !== undefined ? !!customLimits.flowBuilder : (plan.flowBuilder !== undefined ? plan.flowBuilder : true),
+      aiAutoReply: customLimits?.aiAutoReply !== undefined ? !!customLimits.aiAutoReply : (plan.aiAutoReply !== undefined ? plan.aiAutoReply : true),
+      isCustomLimits: !!isCustom
     };
 
+    // Calculate start date
+    if (planStartDate) {
+      tenant.planStartDate = new Date(planStartDate);
+    } else if (!tenant.planStartDate) {
+      tenant.planStartDate = new Date();
+    }
+
+    // Calculate expiration date
+    if (planExpiresAt) {
+      tenant.planExpiresAt = new Date(planExpiresAt);
+    } else {
+      const days = plan.validityDays || 30;
+      tenant.planExpiresAt = new Date(new Date(tenant.planStartDate).getTime() + days * 24 * 60 * 60 * 1000);
+    }
+
+    // Handle extra days extension
+    if (extraDays && !isNaN(extraDays)) {
+      const currentExpiry = tenant.planExpiresAt ? new Date(tenant.planExpiresAt).getTime() : Date.now();
+      tenant.planExpiresAt = new Date(currentExpiry + parseInt(extraDays) * 24 * 60 * 60 * 1000);
+    }
+
     await tenant.save();
+    await writeAuditLog(req, {
+      action: 'TENANT_PLAN_ASSIGNED',
+      entityType: 'Tenant',
+      entityId: tenant._id,
+      tenantId: tenant._id,
+      metadata: { plan: plan.name, planExpiresAt: tenant.planExpiresAt }
+    });
     res.json(tenant);
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getTenantUsage = async (req, res, next) => {
+  try {
+    const tenant = await Tenant.findById(req.params.id);
+    if (!tenant) {
+      return res.status(404).json({ message: 'Tenant not found.' });
+    }
+
+    // active sessions
+    const activeSessionsCount = await WhatsAppSession.countDocuments({
+      tenantId: tenant._id,
+      status: 'CONNECTED'
+    });
+    const totalSessionsCount = await WhatsAppSession.countDocuments({
+      tenantId: tenant._id
+    });
+
+    // contacts
+    const contactsCount = await Contact.countDocuments({ tenantId: tenant._id });
+
+    // daily/monthly sent messages
+    const startOfDay = new Date();
+    startOfDay.setHours(0, 0, 0, 0);
+    const endOfDay = new Date();
+    endOfDay.setHours(23, 59, 59, 999);
+
+    const sentToday = await MessageLog.countDocuments({
+      tenantId: tenant._id,
+      createdAt: { $gte: startOfDay, $lte: endOfDay },
+      status: 'SENT'
+    });
+
+    const startOfMonth = new Date();
+    startOfMonth.setDate(1);
+    startOfMonth.setHours(0, 0, 0, 0);
+
+    const sentThisMonth = await MessageLog.countDocuments({
+      tenantId: tenant._id,
+      createdAt: { $gte: startOfMonth },
+      status: 'SENT'
+    });
+
+    res.json({
+      tenant,
+      usage: {
+        activeDevices: activeSessionsCount,
+        totalDevices: totalSessionsCount,
+        contactsCount,
+        sentToday,
+        sentThisMonth
+      }
+    });
   } catch (error) {
     next(error);
   }

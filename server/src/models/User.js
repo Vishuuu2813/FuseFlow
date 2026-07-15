@@ -29,6 +29,47 @@ const userSchema = new mongoose.Schema(
       enum: ['Admin', 'Manager', 'Employee', 'Support', 'Customer'],
       default: 'Employee',
     },
+    permissions: {
+      sendMessage: { type: Boolean, default: true },
+      sendMessageNote: { type: String, default: '' },
+      sendMessageExpiresAt: { type: Date, default: null },
+
+      bulkScheduling: { type: Boolean, default: true },
+      bulkSchedulingNote: { type: String, default: '' },
+      bulkSchedulingExpiresAt: { type: Date, default: null },
+
+      smartBroadcast: { type: Boolean, default: true },
+      smartBroadcastNote: { type: String, default: '' },
+      smartBroadcastExpiresAt: { type: Date, default: null },
+
+      flowBuilder: { type: Boolean, default: true },
+      flowBuilderNote: { type: String, default: '' },
+      flowBuilderExpiresAt: { type: Date, default: null },
+
+      aiAutoReply: { type: Boolean, default: true },
+      aiAutoReplyNote: { type: String, default: '' },
+      aiAutoReplyExpiresAt: { type: Date, default: null },
+
+      messageLogs: { type: Boolean, default: true },
+      messageLogsNote: { type: String, default: '' },
+      messageLogsExpiresAt: { type: Date, default: null },
+
+      contacts: { type: Boolean, default: true },
+      contactsNote: { type: String, default: '' },
+      contactsExpiresAt: { type: Date, default: null },
+
+      kb: { type: Boolean, default: true },
+      kbNote: { type: String, default: '' },
+      kbExpiresAt: { type: Date, default: null }
+    },
+    permissionAuditLogs: [
+      {
+        changedBy: { type: String },
+        action: { type: String },
+        note: { type: String },
+        timestamp: { type: Date, default: Date.now }
+      }
+    ],
     isActive: {
       type: Boolean,
       default: true,

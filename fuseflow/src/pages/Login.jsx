@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { Mail, Lock, LogIn, ArrowLeft } from 'lucide-react';
 
 const Login = () => {
   const [email, setEmail] = useState('');
@@ -8,8 +9,19 @@ const Login = () => {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   
-  const { login } = useAuth();
+  const { user, login } = useAuth();
   const navigate = useNavigate();
+
+  // Redirect if already authenticated
+  useEffect(() => {
+    if (user) {
+      if (user.role === 'Admin' && !user.tenantId) {
+        navigate('/dashboard/admin');
+      } else {
+        navigate('/dashboard');
+      }
+    }
+  }, [user, navigate]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -25,76 +37,86 @@ const Login = () => {
     setLoading(false);
 
     if (res.success) {
-      navigate('/');
+      navigate('/dashboard');
     } else {
       setError(res.error);
     }
   };
 
   return (
-    <div className="flex h-screen items-center justify-center bg-[#0b0f19] px-4 font-sans">
-      {/* Background Decorative Gradients */}
-      <div className="absolute top-1/4 left-1/4 h-72 w-72 rounded-full bg-emerald-500/10 blur-[100px] pointer-events-none"></div>
-      <div className="absolute bottom-1/4 right-1/4 h-82 w-82 rounded-full bg-indigo-500/10 blur-[120px] pointer-events-none"></div>
+    <div className="min-h-screen bg-slate-50 text-slate-800 flex items-center justify-center p-6 relative overflow-hidden font-sans">
+      {/* Background decoration */}
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 rounded-full bg-emerald-100/50 blur-[100px] pointer-events-none"></div>
 
-      <div className="w-full max-w-md backdrop-blur-xl bg-slate-900/60 border border-white/5 shadow-2xl rounded-3xl p-8 relative z-10">
-        {/* Header */}
-        <div className="text-center mb-8">
-          <div className="inline-block bg-gradient-to-tr from-emerald-500 to-green-400 p-3 rounded-2xl text-slate-950 font-black text-xl shadow-lg shadow-emerald-500/20 mb-4">
-            WF
+      <div className="w-full max-w-md bg-white border border-slate-200 shadow-2xl rounded-3xl p-8 flex flex-col gap-6 relative z-10">
+        
+        {/* Back Link */}
+        <Link to="/" className="inline-flex items-center gap-2 text-slate-400 hover:text-slate-600 text-xs font-semibold transition-colors w-fit">
+          <ArrowLeft size={14} /> Back to Home
+        </Link>
+
+        {/* Brand Header */}
+        <div className="text-center">
+          <div className="inline-flex p-3 rounded-2xl bg-emerald-50 text-emerald-600 mb-4 border border-emerald-100">
+            <LogIn size={24} />
           </div>
-          <h2 className="text-2xl font-bold bg-gradient-to-r from-white to-slate-400 bg-clip-text text-transparent">Welcome back</h2>
-          <p className="text-slate-400 text-sm mt-1">Sign in to manage your WhatsApp campaigns</p>
+          <h1 className="text-2xl font-extrabold tracking-tight text-slate-800">Welcome Back</h1>
+          <p className="text-slate-500 text-xs mt-1">Sign in to manage your WhatsApp campaigns and automation rules.</p>
         </div>
 
         {error && (
-          <div className="mb-4 p-3 rounded-xl border border-red-500/20 bg-red-500/5 text-red-400 text-xs font-medium text-center">
+          <div className="p-3.5 rounded-xl border border-red-200 bg-red-50 text-red-650 text-xs font-bold text-center">
             {error}
           </div>
         )}
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           <div>
-            <label className="block text-xs font-semibold text-slate-400 mb-1.5 uppercase tracking-wider">Email Address</label>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="name@company.com"
-              className="w-full px-4 py-3 rounded-xl bg-slate-950/50 border border-white/5 text-slate-200 placeholder-slate-600 focus:outline-none focus:border-emerald-500 transition-colors"
-            />
+            <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Email Address</label>
+            <div className="relative">
+              <Mail className="absolute left-3 top-3 text-slate-400" size={16} />
+              <input
+                type="email"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="name@company.com"
+                className="w-full pl-10 pr-4 py-3 rounded-xl bg-slate-50 border border-slate-200 text-slate-800 placeholder-slate-400 focus:outline-none focus:border-emerald-600 text-xs transition-colors"
+              />
+            </div>
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-slate-400 mb-1.5 uppercase tracking-wider">Password</label>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="••••••••"
-              className="w-full px-4 py-3 rounded-xl bg-slate-950/50 border border-white/5 text-slate-200 placeholder-slate-600 focus:outline-none focus:border-emerald-500 transition-colors"
-            />
+            <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Password</label>
+            <div className="relative">
+              <Lock className="absolute left-3 top-3 text-slate-400" size={16} />
+              <input
+                type="password"
+                required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="••••••••"
+                className="w-full pl-10 pr-4 py-3 rounded-xl bg-slate-50 border border-slate-200 text-slate-800 placeholder-slate-400 focus:outline-none focus:border-emerald-600 text-xs transition-colors"
+              />
+            </div>
           </div>
 
           <button
             type="submit"
             disabled={loading}
-            className="w-full py-3 mt-4 rounded-xl bg-gradient-to-r from-emerald-500 to-green-500 hover:from-emerald-600 hover:to-green-600 text-slate-950 font-bold text-sm shadow-lg shadow-emerald-500/10 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+            className="w-full py-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-600/50 text-white text-xs font-extrabold transition-all duration-200 shadow-lg shadow-emerald-600/10 cursor-pointer mt-2"
           >
-            {loading ? (
-              <span className="h-4 w-4 animate-spin rounded-full border-2 border-slate-950 border-t-transparent"></span>
-            ) : (
-              'Sign In'
-            )}
+            {loading ? 'Signing In...' : 'Sign In'}
           </button>
         </form>
 
-        <p className="text-center text-xs text-slate-400 mt-6">
+        <div className="text-center text-xs text-slate-500">
           Don't have an account?{' '}
-          <Link to="/signup" className="text-emerald-400 hover:underline font-semibold">
+          <Link to="/signup" className="text-emerald-600 hover:text-emerald-700 font-semibold underline">
             Create workspace
           </Link>
-        </p>
+        </div>
+
       </div>
     </div>
   );

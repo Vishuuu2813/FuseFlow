@@ -1,7 +1,16 @@
 import KBData from '../models/KBData.js';
+import Tenant from '../models/Tenant.js';
 
 export const queryAIResponse = async (tenantId, userMessage) => {
   try {
+    const tenant = await Tenant.findById(tenantId);
+    const aiLimit = tenant?.limits?.maxAiCredits || 50;
+    const usedCredits = tenant?.usage?.aiCreditsUsedThisMonth || 0;
+
+    if (usedCredits >= aiLimit) {
+      return 'Thank you for your message. A support representative will get back to you shortly.';
+    }
+
     // 1. Retrieve matching knowledge context from DB using text index
     const kbItems = await KBData.find(
       {
@@ -50,7 +59,11 @@ Use the above context to answer the user's message. If the answer cannot be foun
         }
       );
       const data = await response.json();
-      return data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+      const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+      if (text) {
+        await Tenant.findByIdAndUpdate(tenantId, { $inc: { 'usage.aiCreditsUsedThisMonth': 1 } });
+      }
+      return text;
     } 
     // 3. Fallback to OpenAI if configured
     else if (apiKeyOpenAI && apiKeyOpenAI !== 'sk-proj-placeholder') {
@@ -70,7 +83,11 @@ Use the above context to answer the user's message. If the answer cannot be foun
         }),
       });
       const data = await response.json();
-      return data.choices?.[0]?.message?.content || '';
+      const text = data.choices?.[0]?.message?.content || '';
+      if (text) {
+        await Tenant.findByIdAndUpdate(tenantId, { $inc: { 'usage.aiCreditsUsedThisMonth': 1 } });
+      }
+      return text;
     }
 
     // 4. Default static response if no AI keys are configured

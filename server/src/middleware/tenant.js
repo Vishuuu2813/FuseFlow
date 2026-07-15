@@ -1,9 +1,14 @@
+import { isPlatformAdmin } from './access.js';
+
 export const requireTenant = (req, res, next) => {
-  if (req.user.role === 'Super Admin') {
-    // Super admins can explicitly pass tenantId in query/headers for tenant-specific actions
+  if (isPlatformAdmin(req.user)) {
+    // Platform admins can explicitly pass tenantId in query/headers for tenant-specific actions.
     const tenantIdHeader = req.headers['x-tenant-id'];
     const tenantIdQuery = req.query.tenantId;
     req.tenantId = tenantIdHeader || tenantIdQuery;
+    if (!req.tenantId) {
+      return res.status(400).json({ message: 'Tenant ID is required for this workspace action.' });
+    }
     return next();
   }
 
@@ -23,7 +28,7 @@ export const checkTenantMatch = (model) => {
       const resourceId = req.params.id;
       if (!resourceId) return next();
 
-      if (req.user.role === 'Super Admin') return next();
+      if (isPlatformAdmin(req.user)) return next();
 
       const doc = await model.findById(resourceId);
       if (!doc) {

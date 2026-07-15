@@ -14,8 +14,11 @@ const tenantSchema = new mongoose.Schema(
     },
     plan: {
       type: String,
-      enum: ['trial', 'basic', 'premium', 'enterprise'],
       default: 'trial',
+    },
+    planStartDate: {
+      type: Date,
+      default: Date.now,
     },
     planExpiresAt: {
       type: Date,
@@ -23,9 +26,17 @@ const tenantSchema = new mongoose.Schema(
     },
     limits: {
       maxDevices: { type: Number, default: 1 },
+      maxContacts: { type: Number, default: 1000 },
       maxMessagesPerMonth: { type: Number, default: 500 },
       maxAiCredits: { type: Number, default: 50 },
       maxStorageMb: { type: Number, default: 100 },
+      dailyMessageLimit: { type: Number, default: 100 },
+      defaultDelaySeconds: { type: Number, default: 5 },
+      minimumDelaySeconds: { type: Number, default: 3 },
+      bulkScheduling: { type: Boolean, default: true },
+      flowBuilder: { type: Boolean, default: true },
+      aiAutoReply: { type: Boolean, default: true },
+      isCustomLimits: { type: Boolean, default: false },
     },
     usage: {
       messagesSentThisMonth: { type: Number, default: 0 },

@@ -55,6 +55,8 @@ const messageLogSchema = new mongoose.Schema(
 messageLogSchema.index({ tenantId: 1, status: 1 });
 messageLogSchema.index({ campaignId: 1 });
 messageLogSchema.index({ messageId: 1 });
+messageLogSchema.index({ campaignId: 1, phone: 1 });
+messageLogSchema.index({ tenantId: 1, createdAt: -1 });
 
 const MessageLog = mongoose.model('MessageLog', messageLogSchema);
 export default MessageLog;

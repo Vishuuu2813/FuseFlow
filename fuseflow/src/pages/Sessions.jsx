@@ -8,16 +8,14 @@ import {
   RefreshCw,
   Power,
   Trash2,
-  AlertCircle,
-  CheckCircle2
+  AlertCircle
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 const Sessions = () => {
-  const { user } = useAuth();
+  const { user, tenant } = useAuth();
   const [sessions, setSessions] = useState([]);
   const [newSessionName, setNewSessionName] = useState('');
-  const [activeQr, setActiveQr] = useState(null);
   const [activeSessionId, setActiveSessionId] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -34,42 +32,39 @@ const Sessions = () => {
   useEffect(() => {
     fetchSessions();
 
-    // 1. Establish WebSocket Connection
-    const socket = io('http://localhost:5000');
-    
-    // Join tenant room for secure events routing
+    const socket = io('http://localhost:5000', {
+      auth: { token: localStorage.getItem('accessToken') }
+    });
     socket.emit('join-tenant', user.tenantId);
 
-    // 2. Listen for Realtime Session Updates
     socket.on('session-update', (data) => {
       setSessions((prev) =>
         prev.map((s) => {
           if (s._id === data.sessionId) {
-            return { ...s, status: data.status, phone: data.phone || s.phone };
+            return {
+              ...s,
+              status: data.status,
+              phone: data.phone || s.phone,
+              qrCode: data.status === 'QR' ? data.qrCode : (data.status === 'CONNECTED' ? null : s.qrCode)
+            };
           }
           return s;
         })
       );
-
-      if (data.sessionId === activeSessionId) {
-        if (data.status === 'QR') {
-          setActiveQr(data.qrCode);
-        } else if (data.status === 'CONNECTED') {
-          setActiveQr(null);
-          setActiveSessionId(null);
-        }
-      }
     });
 
     return () => {
       socket.disconnect();
     };
-  }, [user.tenantId, activeSessionId]);
+  }, [user.tenantId]);
 
   const handleCreateSession = async (e) => {
     e.preventDefault();
     setError('');
-    if (!newSessionName.trim()) return;
+    if (!newSessionName.trim()) {
+      setError('Device name is required.');
+      return;
+    }
 
     setLoading(true);
     try {
@@ -86,7 +81,6 @@ const Sessions = () => {
   const handleConnect = async (sessionId) => {
     setError('');
     setActiveSessionId(sessionId);
-    setActiveQr(null);
     try {
       await api.post(`/sessions/${sessionId}/connect`);
     } catch (err) {
@@ -100,7 +94,6 @@ const Sessions = () => {
       await api.post(`/sessions/${sessionId}/disconnect`);
       fetchSessions();
       if (activeSessionId === sessionId) {
-        setActiveQr(null);
         setActiveSessionId(null);
       }
     } catch (err) {
@@ -114,7 +107,6 @@ const Sessions = () => {
       await api.delete(`/sessions/${sessionId}`);
       setSessions((prev) => prev.filter((s) => s._id !== sessionId));
       if (activeSessionId === sessionId) {
-        setActiveQr(null);
         setActiveSessionId(null);
       }
     } catch (err) {
@@ -123,14 +115,14 @@ const Sessions = () => {
   };
 
   return (
-    <div className="flex flex-col gap-8">
+    <div className="flex flex-col gap-6">
       <div>
-        <h1 className="text-2xl font-bold bg-gradient-to-r from-white to-slate-400 bg-clip-text text-transparent">WhatsApp Devices</h1>
-        <p className="text-slate-400 text-sm mt-1">Manage active connections and QR authentication codes.</p>
+        <h1 className="text-2xl font-extrabold text-slate-800">WhatsApp Devices</h1>
+        <p className="text-slate-500 text-sm mt-1">Manage active connections, link new numbers, and audit QR authentications.</p>
       </div>
 
       {error && (
-        <div className="p-3 rounded-xl border border-red-500/20 bg-red-500/5 text-red-400 text-xs font-medium flex items-center gap-2">
+        <div className="p-3.5 rounded-xl border border-red-200 bg-red-50 text-red-655 text-sm font-semibold flex items-center gap-2">
           <AlertCircle size={16} />
           {error}
         </div>
@@ -140,28 +132,43 @@ const Sessions = () => {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
         {/* Creation & List Card */}
         <div className="lg:col-span-2 flex flex-col gap-6">
-          {/* Create Form */}
-          <form onSubmit={handleCreateSession} className="backdrop-blur-md bg-slate-900/40 border border-white/5 shadow-xl rounded-2xl p-5 flex items-center gap-4">
-            <input
-              type="text"
-              value={newSessionName}
-              onChange={(e) => setNewSessionName(e.target.value)}
-              placeholder="Device name (e.g. Sales Team)"
-              className="flex-1 px-4 py-2.5 rounded-xl bg-slate-950/50 border border-white/5 text-slate-200 placeholder-slate-600 focus:outline-none focus:border-emerald-500 transition-colors text-sm"
-            />
-            <button
-              type="submit"
-              disabled={loading}
-              className="px-5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-semibold text-sm transition-colors flex items-center gap-2 cursor-pointer shrink-0 disabled:opacity-50"
-            >
-              <Plus size={16} /> Add Device
-            </button>
-          </form>
+          {/* Create Form or Limit Notice */}
+          {sessions.length >= (tenant?.limits?.maxDevices || 1) ? (
+            <div className="bg-amber-50 border border-amber-250 text-amber-800 rounded-3xl p-5 text-sm font-semibold flex items-center justify-between gap-4">
+              <div>
+                <span className="font-extrabold block text-slate-800">Device Limit Reached</span>
+                <span className="text-xs text-amber-600 font-medium block mt-0.5">
+                  Your plan ({tenant?.plan ? tenant.plan.toUpperCase() : 'TRIAL'}) allows a maximum of {tenant?.limits?.maxDevices || 1} connected device(s).
+                </span>
+              </div>
+              <span className="px-3 py-1.5 bg-amber-100 text-amber-800 border border-amber-200 text-[10px] font-extrabold rounded-lg uppercase tracking-wider">
+                Max Allowed: {tenant?.limits?.maxDevices || 1}
+              </span>
+            </div>
+          ) : (
+            <form onSubmit={handleCreateSession} className="bg-white border border-slate-200 shadow-sm rounded-3xl p-5 flex items-center gap-4">
+              <input
+                type="text"
+                required
+                value={newSessionName}
+                onChange={(e) => setNewSessionName(e.target.value)}
+                placeholder="Device name (e.g. Sales Team)"
+                className="flex-1 px-4 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-slate-800 placeholder-slate-400 focus:outline-none focus:border-emerald-600 text-sm transition-colors"
+              />
+              <button
+                type="submit"
+                disabled={loading}
+                className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm transition-colors flex items-center gap-2 cursor-pointer shrink-0 disabled:opacity-50"
+              >
+                <Plus size={16} /> Add Device
+              </button>
+            </form>
+          )}
 
           {/* Sessions List */}
           <div className="flex flex-col gap-4">
             {sessions.length === 0 ? (
-              <div className="backdrop-blur-md bg-slate-900/20 border border-white/5 rounded-2xl p-8 text-center text-slate-500 text-sm">
+              <div className="bg-white border border-slate-200 rounded-3xl p-8 text-center text-slate-550 text-sm font-semibold">
                 No WhatsApp devices registered yet. Create one above to connect.
               </div>
             ) : (
@@ -169,17 +176,17 @@ const Sessions = () => {
                 <motion.div
                   key={session._id}
                   layout
-                  className="backdrop-blur-md bg-slate-900/40 border border-white/5 shadow-xl rounded-2xl p-6 flex flex-col md:flex-row md:items-center justify-between gap-4"
+                  className="bg-white border border-slate-200 shadow-sm rounded-3xl p-6 flex flex-col md:flex-row md:items-center justify-between gap-4"
                 >
                   <div className="flex items-center gap-4">
                     <div className={`p-3 rounded-2xl ${
-                      session.status === 'CONNECTED' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-slate-800/60 text-slate-400'
+                      session.status === 'CONNECTED' ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' : 'bg-slate-50 border border-slate-100 text-slate-400'
                     }`}>
                       <Smartphone size={24} />
                     </div>
                     <div>
-                      <h3 className="font-semibold text-slate-200 text-sm">{session.sessionName}</h3>
-                      <p className="text-xs text-slate-500 mt-0.5">
+                      <h3 className="font-bold text-slate-800 text-sm">{session.sessionName}</h3>
+                      <p className="text-xs text-slate-500 mt-0.5 font-medium">
                         {session.phone ? `Phone: +${session.phone}` : 'No phone linked'}
                       </p>
                       <div className="mt-2 flex items-center gap-2">
@@ -187,9 +194,9 @@ const Sessions = () => {
                           session.status === 'CONNECTED' ? 'bg-emerald-500 animate-pulse' :
                           session.status === 'CONNECTING' ? 'bg-yellow-500 animate-pulse' :
                           session.status === 'QR' ? 'bg-indigo-500 animate-pulse' :
-                          'bg-slate-600'
+                          'bg-slate-400'
                         }`}></span>
-                        <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">{session.status}</span>
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">{session.status}</span>
                       </div>
                     </div>
                   </div>
@@ -199,14 +206,14 @@ const Sessions = () => {
                     {session.status === 'DISCONNECTED' ? (
                       <button
                         onClick={() => handleConnect(session._id)}
-                        className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold flex items-center gap-2 cursor-pointer transition-colors"
+                        className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-emerald-50 hover:text-emerald-700 hover:border-emerald-250 border border-slate-200 text-slate-655 text-xs font-bold flex items-center gap-2 cursor-pointer transition-colors"
                       >
                         <RefreshCw size={14} /> Connect
                       </button>
                     ) : (
                       <button
                         onClick={() => handleDisconnect(session._id)}
-                        className="px-4 py-2 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-400 text-xs font-semibold flex items-center gap-2 cursor-pointer transition-colors"
+                        className="px-4 py-2 rounded-xl bg-red-50 hover:bg-red-100 text-red-655 text-xs font-bold flex items-center gap-2 cursor-pointer border border-red-200 transition-colors"
                       >
                         <Power size={14} /> Disconnect
                       </button>
@@ -214,7 +221,7 @@ const Sessions = () => {
 
                     <button
                       onClick={() => handleDelete(session._id)}
-                      className="p-2 rounded-xl bg-red-500/5 hover:bg-red-500/10 text-red-500 border border-red-500/10 transition-colors cursor-pointer"
+                      className="p-2 rounded-xl bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 transition-colors cursor-pointer"
                     >
                       <Trash2 size={16} />
                     </button>
@@ -226,43 +233,73 @@ const Sessions = () => {
         </div>
 
         {/* QR Scanner Panel */}
-        <div className="backdrop-blur-md bg-slate-900/40 border border-white/5 shadow-xl rounded-2xl p-6 flex flex-col items-center">
-          <h3 className="font-semibold text-slate-200 text-sm mb-4">Device Authentication</h3>
+        <div className="bg-white border border-slate-200 rounded-3xl p-6 flex flex-col items-center shadow-sm w-full">
+          <h3 className="font-bold text-slate-800 text-sm mb-4">Device Authentication</h3>
           
           <AnimatePresence mode="wait">
             {activeSessionId ? (
-              activeQr ? (
-                <motion.div
-                  initial={{ opacity: 0, scale: 0.9 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  exit={{ opacity: 0, scale: 0.9 }}
-                  className="flex flex-col items-center gap-4 text-center"
-                >
-                  <div className="p-3 bg-white rounded-2xl shadow-lg">
-                    <img
-                      src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(activeQr)}`}
-                      alt="WhatsApp QR Code"
-                      className="h-48 w-48 block"
-                    />
-                  </div>
-                  <p className="text-xs text-slate-400 max-w-xs mt-2">
-                    Open WhatsApp on your phone, go to Linked Devices, and scan this QR code to authenticate.
-                  </p>
-                </motion.div>
-              ) : (
-                <motion.div
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  className="h-48 flex flex-col items-center justify-center text-center text-slate-500 text-xs gap-3"
-                >
-                  <RefreshCw size={24} className="animate-spin text-emerald-500" />
-                  Generating session handshake...
-                </motion.div>
-              )
+              (() => {
+                const activeSession = sessions.find((s) => s._id === activeSessionId);
+                if (!activeSession) return null;
+
+                if (activeSession.status === 'QR' && activeSession.qrCode) {
+                  return (
+                    <motion.div
+                      key="qr-view"
+                      initial={{ opacity: 0, scale: 0.9 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      exit={{ opacity: 0, scale: 0.9 }}
+                      className="flex flex-col items-center gap-4 text-center w-full"
+                    >
+                      <div className="p-3 bg-white rounded-2xl border border-slate-200 shadow-md">
+                        <img
+                          src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(activeSession.qrCode)}`}
+                          alt="WhatsApp QR Code"
+                          className="h-48 w-48 block"
+                        />
+                      </div>
+                      <p className="text-xs text-slate-500 max-w-xs mt-2 leading-relaxed font-semibold">
+                        Open WhatsApp on your phone, go to Linked Devices, and scan this QR code to authenticate.
+                      </p>
+                    </motion.div>
+                  );
+                } else if (activeSession.status === 'CONNECTING' || activeSession.status === 'QR') {
+                  return (
+                    <motion.div
+                      key="connecting-view"
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      className="h-48 flex flex-col items-center justify-center text-center text-slate-400 text-xs gap-3 w-full"
+                    >
+                      <RefreshCw size={24} className="animate-spin text-emerald-600" />
+                      Generating session handshake...
+                    </motion.div>
+                  );
+                } else if (activeSession.status === 'CONNECTED') {
+                  return (
+                    <motion.div
+                      key="connected-view"
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      className="h-48 flex flex-col items-center justify-center text-center text-slate-400 text-xs gap-3 w-full"
+                    >
+                      <span className="text-emerald-600 font-extrabold text-sm">✓ Connected Successfully</span>
+                    </motion.div>
+                  );
+                } else {
+                  return (
+                    <div className="h-48 flex flex-col items-center justify-center text-center text-slate-400 text-xs p-4 leading-relaxed font-semibold">
+                      <AlertCircle size={24} className="mb-2 text-slate-400" />
+                      Device disconnected. Select "Connect" to try again.
+                    </div>
+                  );
+                }
+              })()
             ) : (
-              <div className="h-48 flex flex-col items-center justify-center text-center text-slate-500 text-xs p-4">
-                <AlertCircle size={24} className="mb-2 text-slate-600" />
+              <div className="h-48 flex flex-col items-center justify-center text-center text-slate-400 text-xs p-4 leading-relaxed font-semibold">
+                <AlertCircle size={24} className="mb-2 text-slate-400" />
                 Select "Connect" on an inactive device to view its pairing QR code here.
               </div>
             )}
