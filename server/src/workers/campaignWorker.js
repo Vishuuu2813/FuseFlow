@@ -29,6 +29,20 @@ const getUsageWindows = () => {
   return { startOfDay, endOfDay, startOfMonth };
 };
 
+const parseSpintax = (text) => {
+  if (!text) return '';
+  const spintaxPattern = /\{([^{}]+)\}/g;
+  let matches;
+  let result = text;
+  while ((matches = spintaxPattern.exec(result)) !== null) {
+    const choices = matches[1].split('|');
+    const randomChoice = choices[Math.floor(Math.random() * choices.length)];
+    result = result.substring(0, matches.index) + randomChoice + result.substring(matches.index + matches[0].length);
+    spintaxPattern.lastIndex = 0;
+  }
+  return result;
+};
+
 const interpolateTemplate = (text, contact) => {
   if (!text) return '';
   let result = text;
@@ -43,7 +57,7 @@ const interpolateTemplate = (text, contact) => {
       result = result.replace(regex, val);
     }
   }
-  return result;
+  return parseSpintax(result);
 };
 
 // Core campaign executor running direct loop in-memory
@@ -225,7 +239,7 @@ export const executeCampaignLogic = async (data) => {
         const sentMsg = await sock.sendMessage(formattedJid, messageOptions);
         sentCount++;
         
-        await MessageLog.create({
+        const savedLog = await MessageLog.create({
           tenantId,
           campaignId,
           whatsappSessionId,
@@ -233,9 +247,11 @@ export const executeCampaignLogic = async (data) => {
           messageText: textToSend,
           mediaUrl,
           status: 'SENT',
+          direction: 'OUTGOING',
           messageId: sentMsg.key.id,
           sentAt: new Date(),
         });
+        emitToTenant(tenantId, 'chat-message', savedLog);
 
         await Tenant.findByIdAndUpdate(tenantId, {
           $inc: { 'usage.messagesSentThisMonth': 1 }

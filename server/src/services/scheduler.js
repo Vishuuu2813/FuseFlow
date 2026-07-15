@@ -5,6 +5,7 @@ import ContactFlowState from '../models/ContactFlowState.js';
 import MessageLog from '../models/MessageLog.js';
 import { addCampaignJob, isCampaignJobActive } from './queue.js';
 import { sessions, connectToWhatsApp } from './whatsapp.js';
+import { emitToTenant } from '../socket.js';
 import pino from 'pino';
 
 const logger = pino({
@@ -144,16 +145,18 @@ export const initScheduler = () => {
           });
 
           // Log in MessageLog
-          await MessageLog.create({
+          const savedLog = await MessageLog.create({
             tenantId: state.tenantId,
             whatsappSessionId: flow.whatsappSessionId,
             phone: contact.phone,
             messageText: textToSend,
             mediaUrl: currentStep.mediaUrl,
             status: 'SENT',
+            direction: 'OUTGOING',
             messageId: sentMsg.key.id,
             sentAt: new Date(),
           });
+          emitToTenant(state.tenantId, 'chat-message', savedLog);
 
           // Move to next step or complete
           const nextStepIndex = state.currentStepIndex + 1;

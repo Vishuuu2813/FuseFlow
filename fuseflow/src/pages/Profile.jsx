@@ -206,6 +206,69 @@ const Profile = () => {
             </div>
           )}
 
+          {/* API & Webhooks Integration */}
+          {tenant && (
+            <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm">
+              <h3 className="text-base font-extrabold text-slate-800 flex items-center gap-1.5 mb-2">
+                <Shield size={18} className="text-indigo-600" />
+                Developer API & Webhooks
+              </h3>
+              <p className="text-slate-500 text-xs font-semibold mb-5">
+                Integrate external platforms (Shopify, Zapier) to automate WhatsApp flows.
+              </p>
+
+              <div className="flex flex-col gap-4">
+                {/* API Key */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase">API Key / Token</label>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      readOnly
+                      value={tenant.apiKey || 'No API Key generated.'}
+                      className="flex-1 px-4 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-slate-700 text-xs font-mono font-bold focus:outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard.writeText(tenant.apiKey || '');
+                        alert('API Key copied to clipboard!');
+                      }}
+                      className="px-3.5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold border border-slate-200 cursor-pointer"
+                    >
+                      Copy
+                    </button>
+                  </div>
+                </div>
+
+                {/* Webhook Endpoint */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase">Trigger Webhook URL</label>
+                  <input
+                    type="text"
+                    readOnly
+                    value={`${window.location.origin.replace(':3000', ':5000')}/api/webhooks/trigger?apiKey=${tenant.apiKey || ''}`}
+                    className="w-full px-4 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-slate-700 text-xs font-mono font-bold focus:outline-none"
+                  />
+                </div>
+
+                {/* Sample payload */}
+                <div className="bg-slate-950 rounded-2xl p-4 text-[10px] font-mono text-emerald-400 overflow-x-auto">
+                  <span className="text-slate-500 block mb-1">// POST request body schema:</span>
+                  {JSON.stringify({
+                    phone: "1234567890",
+                    name: "John Doe",
+                    flowId: "FLOW_ID_HERE",
+                    variables: {
+                      order_id: "1001",
+                      item: "Laptop"
+                    }
+                  }, null, 2)}
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Change Password Portal */}
           <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm">
             <h3 className="text-base font-extrabold text-slate-800 flex items-center gap-1.5 mb-5">

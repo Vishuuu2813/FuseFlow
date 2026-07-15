@@ -12,7 +12,9 @@ import {
   updateTenantUser,
   updateTenantUserPermissions,
   deleteTenantUser,
-  changePassword
+  changePassword,
+  getPublicPlans,
+  renewPlan
 } from '../controllers/auth.js';
 import { authenticate } from '../middleware/auth.js';
 import { requireWorkspaceAdmin } from '../middleware/access.js';
@@ -23,6 +25,8 @@ router.post('/signup', signup);
 router.post('/login', login);
 router.post('/refresh', refresh);
 router.post('/logout', logout);
+router.get('/public-plans', getPublicPlans);
+router.post('/renew-plan', renewPlan);
 router.get('/me', authenticate, getProfile);
 router.post('/change-password', authenticate, changePassword);
 

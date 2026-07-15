@@ -561,10 +561,10 @@ const Overview = () => {
             <p className="text-sm font-medium text-slate-500">Events across automation, CRM, and AI.</p>
           </div>
           <div className="space-y-4">
-            {activityFeed.map((item) => {
+            {activityFeed.map((item, index) => {
               const Icon = item.icon;
               return (
-                <div key={item.title} className="flex gap-3">
+                <div key={`${item.title}-${index}`} className="flex gap-3">
                   <span className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${item.tone}`}>
                     <Icon size={17} />
                   </span>
@@ -592,8 +592,8 @@ const Overview = () => {
             </div>
           </div>
           <div className="divide-y divide-slate-100">
-            {chatPreview.map((chat) => (
-              <div key={chat.name} className="flex items-center gap-3 px-5 py-4 transition hover:bg-slate-50">
+            {chatPreview.map((chat, index) => (
+              <div key={`${chat.name}-${index}`} className="flex items-center gap-3 px-5 py-4 transition hover:bg-slate-50">
                 <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-indigo-100 to-emerald-100 text-sm font-extrabold text-indigo-700">
                   {chat.name.charAt(0)}
                 </span>

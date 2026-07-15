@@ -118,10 +118,32 @@ export const createContact = async (req, res, next) => {
 export const updateContact = async (req, res, next) => {
   try {
     const { name, phone, tags, labels, stage, variables } = req.body;
-    const contact = await Contact.findOne({ _id: req.params.id, tenantId: req.tenantId });
+    let contact;
+
+    const isObjectId = /^[0-9a-fA-F]{24}$/.test(req.params.id);
+    if (isObjectId) {
+      contact = await Contact.findOne({ _id: req.params.id, tenantId: req.tenantId });
+    } else {
+      const cleanPhone = req.params.id.replace(/[^0-9]/g, '');
+      contact = await Contact.findOne({ phone: cleanPhone, tenantId: req.tenantId });
+    }
 
     if (!contact) {
-      return res.status(404).json({ message: 'Contact not found.' });
+      // Create a contact automatically if it doesn't exist yet
+      const targetPhone = isObjectId ? (phone ? phone.replace(/[^0-9]/g, '') : '') : req.params.id.replace(/[^0-9]/g, '');
+      if (!targetPhone) {
+        return res.status(400).json({ message: 'Valid phone number is required to create contact.' });
+      }
+      contact = await Contact.create({
+        tenantId: req.tenantId,
+        name: name || 'New Contact',
+        phone: targetPhone,
+        tags: tags || [],
+        labels: labels || [],
+        stage: stage || 'lead',
+        variables: variables || {},
+      });
+      return res.json(contact);
     }
 
     if (name) contact.name = name;
@@ -165,6 +187,11 @@ export const importContacts = async (req, res, next) => {
       await workbook.xlsx.load(req.file.buffer);
       const worksheet = workbook.getWorksheet(1);
 
+      const headers = [];
+      worksheet.getRow(1).eachCell((cell, colNumber) => {
+        headers[colNumber] = cell.value?.toString().trim().toLowerCase() || `field_${colNumber}`;
+      });
+
       worksheet.eachRow((row, rowNumber) => {
         if (rowNumber === 1) return; // Skip headers (Name, Phone, Tags)
         
@@ -176,11 +203,20 @@ export const importContacts = async (req, res, next) => {
           const cleanPhone = phone.replace(/[^0-9]/g, '');
           const tags = tagsString ? tagsString.split(',').map((t) => t.trim()) : [];
           
+          // Get extra columns as custom variables
+          const variables = {};
+          row.eachCell((cell, colNumber) => {
+            if (colNumber > 3 && headers[colNumber]) {
+              variables[headers[colNumber]] = cell.value?.toString() || '';
+            }
+          });
+
           contactsToInsert.push({
             tenantId: req.tenantId,
             name,
             phone: cleanPhone,
             tags,
+            variables,
             stage: 'lead',
             consent: {
               optIn: true,
@@ -194,31 +230,44 @@ export const importContacts = async (req, res, next) => {
       const csvText = req.file.buffer.toString('utf-8');
       const lines = csvText.split('\n');
 
-      for (let i = 1; i < lines.length; i++) {
-        const line = lines[i].trim();
-        if (!line) continue;
+      if (lines.length > 0) {
+        const headers = parseCsvLine(lines[0]).map((h) => h.trim().toLowerCase());
 
-        const parts = parseCsvLine(line);
-        const name = parts[0]?.trim();
-        const phone = parts[1]?.trim();
-        const tagsString = parts[2]?.trim();
+        for (let i = 1; i < lines.length; i++) {
+          const line = lines[i].trim();
+          if (!line) continue;
 
-        if (name && phone) {
-          const cleanPhone = phone.replace(/[^0-9]/g, '');
-          const tags = tagsString ? tagsString.split(';').map((t) => t.trim()) : []; // Split by semicolon for CSV tags
-          
-          contactsToInsert.push({
-            tenantId: req.tenantId,
-            name,
-            phone: cleanPhone,
-            tags,
-            stage: 'lead',
-            consent: {
-              optIn: true,
-              optInSource: 'import',
-              consentedAt: new Date()
-            },
-          });
+          const parts = parseCsvLine(line);
+          const name = parts[0]?.trim();
+          const phone = parts[1]?.trim();
+          const tagsString = parts[2]?.trim();
+
+          if (name && phone) {
+            const cleanPhone = phone.replace(/[^0-9]/g, '');
+            const tags = tagsString ? tagsString.split(';').map((t) => t.trim()) : []; // Split by semicolon for CSV tags
+            
+            // Get extra columns as custom variables
+            const variables = {};
+            for (let colIndex = 3; colIndex < parts.length; colIndex++) {
+              if (headers[colIndex]) {
+                variables[headers[colIndex]] = parts[colIndex] || '';
+              }
+            }
+
+            contactsToInsert.push({
+              tenantId: req.tenantId,
+              name,
+              phone: cleanPhone,
+              tags,
+              variables,
+              stage: 'lead',
+              consent: {
+                optIn: true,
+                optInSource: 'import',
+                consentedAt: new Date()
+              },
+            });
+          }
         }
       }
     }

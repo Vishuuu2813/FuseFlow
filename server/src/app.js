@@ -23,6 +23,8 @@ import autoReplyRouter from './routes/autoreply.js';
 import kbRouter from './routes/kb.js';
 import adminRouter from './routes/admin.js';
 import flowRouter from './routes/flow.js';
+import chatRouter from './routes/chat.js';
+import webhookRouter from './routes/webhook.js';
 
 const logger = pino({
   transport: {
@@ -43,7 +45,22 @@ const allowedOrigins = (process.env.CLIENT_ORIGINS || process.env.CLIENT_URL || 
 initIO(server);
 
 // 2. Connect to Database
-connectDB();
+connectDB().then(async () => {
+  try {
+    const WhatsAppSession = (await import('./models/WhatsAppSession.js')).default;
+    const { connectToWhatsApp } = await import('./services/whatsapp.js');
+    const activeSessions = await WhatsAppSession.find({ status: 'CONNECTED' });
+    logger.info(`[Startup] Found ${activeSessions.length} active sessions to reconnect.`);
+    for (const session of activeSessions) {
+      logger.info(`[Startup] Reconnecting active session: ${session.sessionName} (${session._id})`);
+      connectToWhatsApp(session.tenantId, session._id).catch((err) => {
+        logger.error(`[Startup] Failed to reconnect session ${session._id}: ${err.message}`);
+      });
+    }
+  } catch (err) {
+    logger.error(`[Startup] Error during active session auto-reconnect: ${err.message}`);
+  }
+});
 initScheduler();
 
 // 4. Middlewares
@@ -86,6 +103,8 @@ app.use('/api/autoreply', autoReplyRouter);
 app.use('/api/kb', kbRouter);
 app.use('/api/admin', adminRouter);
 app.use('/api/flows', flowRouter);
+app.use('/api/chat', chatRouter);
+app.use('/api/webhooks', webhookRouter);
 
 
 // Base Health Check
@@ -116,3 +135,5 @@ if (!process.env.VERCEL) {
 }
 
 export default app;
+
+

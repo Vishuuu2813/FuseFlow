@@ -43,12 +43,18 @@ const contactSchema = new mongoose.Schema(
       optOutReason: { type: String, default: '' },
     },
     notes: [noteSchema],
+    lid: {
+      type: String,
+      trim: true,
+      default: null,
+    },
   },
   { timestamps: true }
 );
 
 // Ensure unique phone number per tenant
 contactSchema.index({ tenantId: 1, phone: 1 }, { unique: true });
+contactSchema.index({ tenantId: 1, lid: 1 });
 contactSchema.index({ name: 'text', phone: 'text', tags: 'text' }); // Text index for easy searching
 
 const Contact = mongoose.model('Contact', contactSchema);

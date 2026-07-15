@@ -142,6 +142,28 @@ export const login = async (req, res, next) => {
       return res.status(401).json({ message: 'Invalid credentials.' });
     }
 
+    if (user.tenantId) {
+      const tenant = await Tenant.findById(user.tenantId);
+      if (tenant) {
+        if (tenant.status === 'suspended') {
+          return res.status(403).json({
+            message: 'Workspace is suspended. Please contact support.',
+            code: 'WORKSPACE_SUSPENDED'
+          });
+        }
+        if (tenant.planExpiresAt && new Date(tenant.planExpiresAt).getTime() < Date.now()) {
+          return res.status(403).json({
+            message: user.role === 'Admin'
+              ? 'Workspace subscription has expired. Please renew your plan to login.'
+              : 'Workspace subscription has expired. Please ask your administrator to renew.',
+            code: 'SUBSCRIPTION_EXPIRED',
+            tenantId: tenant._id,
+            isAdmin: user.role === 'Admin'
+          });
+        }
+      }
+    }
+
     // Issue Tokens
     const accessToken = generateAccessToken(user);
     const refreshToken = generateRefreshToken(user);
@@ -635,6 +657,95 @@ export const changePassword = async (req, res, next) => {
     });
 
     res.json({ success: true, message: 'Password updated successfully.' });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getPublicPlans = async (req, res, next) => {
+  try {
+    // Filter out trial plan for renewals (only return plans where price > 0 and name is not trial)
+    const plans = await Plan.find({
+      name: { $ne: 'trial' },
+      price: { $gt: 0 }
+    }).sort({ price: 1 });
+    res.json(plans);
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const renewPlan = async (req, res, next) => {
+  try {
+    const { email, password, planId } = req.body;
+
+    if (!email || !password || !planId) {
+      return res.status(400).json({ message: 'Email, password, and plan selection are required.' });
+    }
+
+    const user = await User.findOne({ email });
+    if (!user || !user.isActive) {
+      return res.status(401).json({ message: 'Invalid credentials.' });
+    }
+
+    const isMatch = await user.comparePassword(password);
+    if (!isMatch) {
+      return res.status(401).json({ message: 'Invalid credentials.' });
+    }
+
+    if (user.role !== 'Admin') {
+      return res.status(403).json({ message: 'Only workspace administrators can renew or upgrade the subscription.' });
+    }
+
+    const tenant = await Tenant.findById(user.tenantId);
+    if (!tenant) {
+      return res.status(404).json({ message: 'Workspace not found.' });
+    }
+
+    if (planId === 'virtual-trial-id') {
+      return res.status(400).json({ message: 'Trial plan is not eligible for renewal. Please choose a paid subscription plan.' });
+    }
+
+    const plan = await Plan.findById(planId);
+    if (!plan) {
+      return res.status(404).json({ message: 'Selected plan not found.' });
+    }
+
+    if (plan.name.toLowerCase() === 'trial' || plan.price === 0) {
+      return res.status(400).json({ message: 'Trial plan is not eligible for renewal. Please choose a paid subscription plan.' });
+    }
+
+    tenant.plan = plan.name;
+    tenant.limits = {
+      maxDevices: plan.deviceLimit,
+      maxContacts: plan.maxContacts || 1000,
+      maxMessagesPerMonth: plan.maxMessagesPerMonth,
+      maxAiCredits: plan.maxAiCredits,
+      maxStorageMb: plan.maxStorageMb,
+      dailyMessageLimit: plan.dailyMessageLimit || 100,
+      defaultDelaySeconds: plan.defaultDelaySeconds || 5,
+      bulkScheduling: plan.bulkScheduling !== false,
+      flowBuilder: plan.flowBuilder !== false,
+      aiAutoReply: plan.aiAutoReply !== false
+    };
+
+    tenant.planStartDate = new Date();
+    const days = plan.validityDays || 30;
+    tenant.planExpiresAt = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
+    tenant.status = 'active';
+
+    await tenant.save();
+
+    req.user = user;
+    await writeAuditLog(req, {
+      action: 'TENANT_PLAN_RENEWED_ON_LOGIN',
+      entityType: 'Tenant',
+      entityId: tenant._id,
+      tenantId: tenant._id,
+      metadata: { plan: plan.name, planExpiresAt: tenant.planExpiresAt }
+    });
+
+    res.json({ message: 'Plan renewed successfully. You can now login.', tenant });
   } catch (error) {
     next(error);
   }

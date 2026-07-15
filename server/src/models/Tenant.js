@@ -48,6 +48,12 @@ const tenantSchema = new mongoose.Schema(
       autoReplyDelaySeconds: { type: Number, default: 2 },
       aiEnabled: { type: Boolean, default: false },
     },
+    apiKey: {
+      type: String,
+      unique: true,
+      sparse: true,
+      default: () => Math.random().toString(36).substring(2) + Math.random().toString(36).substring(2),
+    },
   },
   { timestamps: true }
 );

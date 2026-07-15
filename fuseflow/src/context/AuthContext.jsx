@@ -39,7 +39,13 @@ export const AuthProvider = ({ children }) => {
       await fetchProfile();
       return { success: true };
     } catch (err) {
-      return { success: false, error: err.response?.data?.message || 'Login failed.' };
+      return { 
+        success: false, 
+        error: err.response?.data?.message || 'Login failed.',
+        code: err.response?.data?.code,
+        tenantId: err.response?.data?.tenantId,
+        isAdmin: err.response?.data?.isAdmin
+      };
     } finally {
       setLoading(false);
     }

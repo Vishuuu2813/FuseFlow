@@ -42,6 +42,7 @@ const workspaceLinks = [
     label: 'Messaging',
     items: [
       { to: '/dashboard/sessions', icon: Smartphone, label: 'Connection' },
+      { to: '/dashboard/live-chat', icon: MessageSquare, label: 'Live Chat' },
       { to: '/dashboard/send-message', icon: Mail, label: 'Send Message', permissionKey: 'sendMessage' },
       { to: '/dashboard/campaigns', icon: Send, label: 'Bulk Send', gate: 'bulkScheduling', permissionKey: 'bulkScheduling' },
       { to: '/dashboard/smart-broadcast', icon: Zap, label: 'Smart Broadcast', gate: 'bulkScheduling', permissionKey: 'smartBroadcast' },

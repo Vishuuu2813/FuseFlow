@@ -29,8 +29,13 @@ const messageLogSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ['PENDING', 'SENT', 'DELIVERED', 'READ', 'FAILED'],
+      enum: ['PENDING', 'SENT', 'DELIVERED', 'READ', 'FAILED', 'RECEIVED'],
       default: 'PENDING',
+    },
+    direction: {
+      type: String,
+      enum: ['INCOMING', 'OUTGOING'],
+      default: 'OUTGOING',
     },
     errorReason: {
       type: String,
@@ -57,6 +62,7 @@ messageLogSchema.index({ campaignId: 1 });
 messageLogSchema.index({ messageId: 1 });
 messageLogSchema.index({ campaignId: 1, phone: 1 });
 messageLogSchema.index({ tenantId: 1, createdAt: -1 });
+messageLogSchema.index({ tenantId: 1, phone: 1, direction: 1 });
 
 const MessageLog = mongoose.model('MessageLog', messageLogSchema);
 export default MessageLog;

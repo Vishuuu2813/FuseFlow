@@ -39,7 +39,11 @@ const Login = () => {
     if (res.success) {
       navigate('/dashboard');
     } else {
-      setError(res.error);
+      if (res.code === 'SUBSCRIPTION_EXPIRED') {
+        navigate(`/renew-subscription?email=${encodeURIComponent(email)}&isAdmin=${res.isAdmin ? 'true' : 'false'}`);
+      } else {
+        setError(res.error);
+      }
     }
   };
 
@@ -51,7 +55,7 @@ const Login = () => {
       <div className="w-full max-w-md bg-white border border-slate-200 shadow-2xl rounded-3xl p-8 flex flex-col gap-6 relative z-10">
         
         {/* Back Link */}
-        <Link to="/" className="inline-flex items-center gap-2 text-slate-400 hover:text-slate-600 text-xs font-semibold transition-colors w-fit">
+        <Link to="/" className="inline-flex items-center gap-2 text-slate-400 hover:text-slate-650 text-xs font-semibold transition-colors w-fit">
           <ArrowLeft size={14} /> Back to Home
         </Link>
 

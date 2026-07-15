@@ -23,6 +23,8 @@ import AdminPlans from './pages/AdminPlans';
 import AdminPanel from './pages/AdminPanel';
 import Profile from './pages/Profile';
 import Billing from './pages/Billing';
+import LiveChat from './pages/LiveChat';
+import RenewSubscription from './pages/RenewSubscription';
 
 function App() {
   return (
@@ -35,6 +37,7 @@ function App() {
           {/* Public User Authentication Routes */}
           <Route path="/login" element={<Login />} />
           <Route path="/signup" element={<Signup />} />
+          <Route path="/renew-subscription" element={<RenewSubscription />} />
 
           {/* Public Admin Authentication Routes */}
           <Route path="/admin-login" element={<AdminLogin />} />
@@ -44,6 +47,7 @@ function App() {
           <Route path="/dashboard" element={<DashboardLayout />}>
             <Route index element={<Overview />} />
             <Route path="sessions" element={<Sessions />} />
+            <Route path="live-chat" element={<LiveChat />} />
             <Route
               path="send-message"
               element={

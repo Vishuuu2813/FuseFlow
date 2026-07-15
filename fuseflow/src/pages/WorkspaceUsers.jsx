@@ -20,8 +20,33 @@ import {
   User,
   Mail,
   Lock,
-  Smartphone
+  Smartphone,
+  Shield,
+  ShieldAlert,
+  KeyRound,
+  Users
 } from 'lucide-react';
+
+const getDatetimeString = (dateVal) => {
+  if (!dateVal) return '';
+  const d = new Date(dateVal);
+  if (isNaN(d.getTime())) return '';
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+};
+
+const getAvatarColor = (name) => {
+  const colors = [
+    'from-violet-500 to-indigo-500',
+    'from-cyan-500 to-blue-500',
+    'from-emerald-500 to-teal-500',
+    'from-amber-500 to-orange-500',
+    'from-rose-500 to-pink-500',
+    'from-purple-500 to-fuchsia-500'
+  ];
+  const idx = (name || '').charCodeAt(0) % colors.length;
+  return colors[isNaN(idx) ? 0 : idx];
+};
 
 const WorkspaceUsers = () => {
   const { user: currentUser, loading } = useAuth();
@@ -58,6 +83,7 @@ const WorkspaceUsers = () => {
   const [tenants, setTenants] = useState([]);
   const [sessions, setSessions] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState('All');
   
   // Custom view toggles
   const [showAddPage, setShowAddPage] = useState(false);
@@ -130,14 +156,6 @@ const WorkspaceUsers = () => {
   const handleOpenPermissions = (member) => {
     setPermissionsUser(member);
     
-    const getDatetimeString = (dateVal) => {
-      if (!dateVal) return '';
-      const d = new Date(dateVal);
-      if (isNaN(d.getTime())) return '';
-      const pad = (n) => String(n).padStart(2, '0');
-      return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-    };
-
     setPermissionsState({
       sendMessage: member.permissions?.sendMessage !== false,
       sendMessageNote: member.permissions?.sendMessageNote || '',
@@ -340,8 +358,8 @@ const WorkspaceUsers = () => {
     setTrackUser(member);
     setTrackUsage(null);
     setSelectedPlanId('');
-    setPlanStartDateInput(new Date().toISOString().substring(0, 10));
-    setPlanExpiresAtInput(new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().substring(0, 10));
+    setPlanStartDateInput(getDatetimeString(new Date()));
+    setPlanExpiresAtInput(getDatetimeString(new Date(Date.now() + 14 * 24 * 60 * 60 * 1000)));
     setExtraDaysInput(0);
     setTrackLoading(true);
     try {
@@ -351,10 +369,10 @@ const WorkspaceUsers = () => {
         setTrackUsage(data);
         
         if (data.tenant?.planStartDate) {
-          setPlanStartDateInput(new Date(data.tenant.planStartDate).toISOString().substring(0, 10));
+          setPlanStartDateInput(getDatetimeString(data.tenant.planStartDate));
         }
         if (data.tenant?.planExpiresAt) {
-          setPlanExpiresAtInput(new Date(data.tenant.planExpiresAt).toISOString().substring(0, 10));
+          setPlanExpiresAtInput(getDatetimeString(data.tenant.planExpiresAt));
         }
         if (data.tenant?.limits) {
           setCustomMaxDevices(data.tenant.limits.maxDevices || 1);
@@ -389,7 +407,7 @@ const WorkspaceUsers = () => {
       const days = selectedPlan.validityDays || 30;
       const start = planStartDateInput ? new Date(planStartDateInput) : new Date();
       const expiry = new Date(start.getTime() + days * 24 * 60 * 60 * 1000);
-      setPlanExpiresAtInput(expiry.toISOString().substring(0, 10));
+      setPlanExpiresAtInput(getDatetimeString(expiry));
 
       setCustomMaxDevices(selectedPlan.deviceLimit || 1);
       setCustomMaxMessagesPerMonth(selectedPlan.maxMessagesPerMonth || 500);
@@ -408,7 +426,7 @@ const WorkspaceUsers = () => {
       const days = selectedPlan.validityDays || 30;
       const start = new Date(dateVal);
       const expiry = new Date(start.getTime() + days * 24 * 60 * 60 * 1000);
-      setPlanExpiresAtInput(expiry.toISOString().substring(0, 10));
+      setPlanExpiresAtInput(getDatetimeString(expiry));
     }
   };
 
@@ -444,11 +462,53 @@ const WorkspaceUsers = () => {
     }
   };
 
-  const filteredUsers = users.filter(
-    (u) =>
+  const handleExpirePlanImmediately = async () => {
+    if (!trackUser?.tenantId?._id) return;
+    const confirmExpire = window.confirm('Are you sure you want to expire this workspace subscription immediately?');
+    if (!confirmExpire) return;
+    
+    setTrackLoading(true);
+    try {
+      const expiredTime = new Date(Date.now() - 1000).toISOString();
+      await api.put(`/admin/tenants/${trackUser.tenantId._id}/plan`, {
+        planId: selectedPlanId || plansList[0]?._id || 'virtual-trial-id',
+        planStartDate: planStartDateInput,
+        planExpiresAt: expiredTime,
+        extraDays: 0,
+        customLimits: {
+          maxDevices: parseInt(customMaxDevices) || 1,
+          maxContacts: parseInt(customMaxStorageMb) || 0,
+          maxMessagesPerMonth: parseInt(customMaxMessagesPerMonth) || 0,
+          maxAiCredits: parseInt(customMaxAiCredits) || 0,
+          maxStorageMb: parseInt(customMaxStorageMb) || 0,
+          dailyMessageLimit: parseInt(customDailyMessageLimit) || 0,
+          defaultDelaySeconds: parseInt(customDefaultDelaySeconds) || 5
+        }
+      });
+      
+      setSuccess(`Subscription expired immediately.`);
+      setTrackUser(null);
+      fetchUsersData();
+    } catch (err) {
+      setError('Failed to expire workspace subscription.');
+    } finally {
+      setTrackLoading(false);
+    }
+  };
+
+  const filteredUsers = users.filter((u) => {
+    const matchesSearch =
       u.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      u.email?.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+      u.email?.toLowerCase().includes(searchQuery.toLowerCase());
+    if (!matchesSearch) return false;
+
+    if (statusFilter === 'All') return true;
+    if (statusFilter === 'Allowed') return u.isActive;
+    if (statusFilter === 'Banned') return !u.isActive;
+    if (statusFilter === 'Admins') return u.role === 'Admin' || !u.tenantId;
+    if (statusFilter === 'Members') return u.role !== 'Admin' && u.tenantId;
+    return true;
+  });
 
   // -------------------------------------------------------------
   // FULL PAGE VIEW: USER PERMISSIONS CHECKLIST
@@ -960,9 +1020,9 @@ const WorkspaceUsers = () => {
                   </div>
 
                   <div>
-                    <label className="block text-[10px] font-black text-slate-450 mb-1.5 uppercase">Plan Start Date</label>
+                    <label className="block text-[10px] font-black text-slate-450 mb-1.5 uppercase">Plan Start Date & Time</label>
                     <input
-                      type="date"
+                      type="datetime-local"
                       required
                       value={planStartDateInput}
                       onChange={(e) => handleStartDateChange(e.target.value)}
@@ -971,9 +1031,9 @@ const WorkspaceUsers = () => {
                   </div>
 
                   <div>
-                    <label className="block text-[10px] font-black text-slate-450 mb-1.5 uppercase">Plan Expiry Date</label>
+                    <label className="block text-[10px] font-black text-slate-450 mb-1.5 uppercase">Plan Expiry Date & Time</label>
                     <input
-                      type="date"
+                      type="datetime-local"
                       required
                       value={planExpiresAtInput}
                       onChange={(e) => setPlanExpiresAtInput(e.target.value)}
@@ -1055,12 +1115,22 @@ const WorkspaceUsers = () => {
                     </p>
                   </div>
 
-                  <button
-                    type="submit"
-                    className="w-full py-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black cursor-pointer transition-all flex items-center justify-center gap-1.5 shadow-md shadow-indigo-600/10"
-                  >
-                    <Check size={14} /> Update Plan & Expiry
-                  </button>
+                  <div className="flex flex-col gap-2">
+                    <button
+                      type="submit"
+                      className="w-full py-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black cursor-pointer transition-all flex items-center justify-center gap-1.5 shadow-md shadow-indigo-600/10"
+                    >
+                      <Check size={14} /> Update Plan & Expiry
+                    </button>
+                    
+                    <button
+                      type="button"
+                      onClick={handleExpirePlanImmediately}
+                      className="w-full py-3 rounded-xl bg-rose-50 border border-rose-200 hover:bg-rose-100 text-rose-700 text-xs font-black cursor-pointer transition-all flex items-center justify-center gap-1.5 shadow-sm"
+                    >
+                      <XCircle size={14} /> Expire Plan Immediately
+                    </button>
+                  </div>
                 </form>
               </div>
 
@@ -1082,6 +1152,11 @@ const WorkspaceUsers = () => {
   // -------------------------------------------------------------
   // DEFAULT CATALOG LISTING VIEW
   // -------------------------------------------------------------
+  const totalUsersCount = users.length;
+  const allowedUsersCount = users.filter(u => u.isActive).length;
+  const bannedUsersCount = users.filter(u => !u.isActive).length;
+  const adminUsersCount = users.filter(u => u.role === 'Admin' || !u.tenantId).length;
+
   return (
     <div className="flex flex-col gap-6">
       {/* Header */}
@@ -1090,7 +1165,7 @@ const WorkspaceUsers = () => {
           <h1 className="text-2xl font-extrabold text-slate-800">
             {isGlobalAdmin ? 'Global Users Directory' : 'Workspace Team Members'}
           </h1>
-          <p className="text-slate-500 text-sm mt-1">
+          <p className="text-slate-500 text-sm mt-1 font-semibold">
             {isGlobalAdmin
               ? 'Manage administrative credentials, check registration logs, and trace usage metrics.'
               : 'Add team members, configure feature access rules, and manage credentials.'}
@@ -1098,7 +1173,7 @@ const WorkspaceUsers = () => {
         </div>
         <button
           onClick={() => setShowAddPage(true)}
-          className="px-4.5 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold flex items-center gap-2 cursor-pointer transition-colors shadow-md shadow-emerald-600/10"
+          className="px-4.5 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-750 text-white text-sm font-black flex items-center gap-2 cursor-pointer transition-all hover:shadow-lg shadow-md shadow-indigo-650/10"
         >
           <UserPlus size={16} /> {isGlobalAdmin ? 'Add New User' : 'Invite Team Member'}
         </button>
@@ -1116,19 +1191,111 @@ const WorkspaceUsers = () => {
         </div>
       )}
 
+      {/* Premium Statistics Overview */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+        {/* Card 1: Total Users */}
+        <div className="relative overflow-hidden bg-white border border-slate-200/80 rounded-3xl p-5 shadow-sm transition-all hover:shadow-md hover:border-slate-300">
+          <div className="flex justify-between items-start">
+            <div className="flex flex-col gap-1">
+              <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Total Accounts</span>
+              <span className="text-2xl font-black text-slate-850">{totalUsersCount}</span>
+            </div>
+            <div className="p-3 rounded-2xl bg-indigo-50 text-indigo-600">
+              <Users size={20} />
+            </div>
+          </div>
+          <div className="mt-4 flex items-center gap-1.5 text-[10px] font-black text-indigo-650 uppercase">
+            Platform registrations
+          </div>
+          <div className="absolute -bottom-6 -right-6 w-24 h-24 bg-indigo-50/40 rounded-full blur-2xl"></div>
+        </div>
+
+        {/* Card 2: Allowed Accounts */}
+        <div className="relative overflow-hidden bg-white border border-slate-200/80 rounded-3xl p-5 shadow-sm transition-all hover:shadow-md hover:border-slate-300">
+          <div className="flex justify-between items-start">
+            <div className="flex flex-col gap-1">
+              <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Allowed Access</span>
+              <span className="text-2xl font-black text-emerald-600">{allowedUsersCount}</span>
+            </div>
+            <div className="p-3 rounded-2xl bg-emerald-50 text-emerald-600">
+              <Shield size={20} />
+            </div>
+          </div>
+          <div className="mt-4 flex items-center gap-1.5 text-[10px] font-black text-emerald-650 uppercase">
+            Active Gateway Verified
+          </div>
+          <div className="absolute -bottom-6 -right-6 w-24 h-24 bg-emerald-50/40 rounded-full blur-2xl"></div>
+        </div>
+
+        {/* Card 3: Suspended Accounts */}
+        <div className="relative overflow-hidden bg-white border border-slate-200/80 rounded-3xl p-5 shadow-sm transition-all hover:shadow-md hover:border-slate-300">
+          <div className="flex justify-between items-start">
+            <div className="flex flex-col gap-1">
+              <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Suspended</span>
+              <span className="text-2xl font-black text-rose-600">{bannedUsersCount}</span>
+            </div>
+            <div className="p-3 rounded-2xl bg-rose-50 text-rose-555">
+              <ShieldAlert size={20} />
+            </div>
+          </div>
+          <div className="mt-4 flex items-center gap-1.5 text-[10px] font-black text-rose-500 uppercase">
+            Suspended Profiles
+          </div>
+          <div className="absolute -bottom-6 -right-6 w-24 h-24 bg-rose-50/40 rounded-full blur-2xl"></div>
+        </div>
+
+        {/* Card 4: Administrative Roles */}
+        <div className="relative overflow-hidden bg-white border border-slate-200/80 rounded-3xl p-5 shadow-sm transition-all hover:shadow-md hover:border-slate-300">
+          <div className="flex justify-between items-start">
+            <div className="flex flex-col gap-1">
+              <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Admin Status</span>
+              <span className="text-2xl font-black text-amber-500">{adminUsersCount}</span>
+            </div>
+            <div className="p-3 rounded-2xl bg-amber-50 text-amber-600">
+              <KeyRound size={20} />
+            </div>
+          </div>
+          <div className="mt-4 flex items-center gap-1.5 text-[10px] font-black text-amber-600 uppercase">
+            Privileged Users
+          </div>
+          <div className="absolute -bottom-6 -right-6 w-24 h-24 bg-amber-50/40 rounded-full blur-2xl"></div>
+        </div>
+      </div>
+
       {/* Directory Table */}
       <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm flex flex-col gap-6">
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-          <h2 className="text-base font-bold text-slate-850">Registered Directory</h2>
-          
-          <div className="relative w-full sm:w-72">
-            <Search className="absolute left-3 top-2.5 text-slate-400" size={16} />
+        <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 border-b border-slate-100 pb-5">
+          {/* Quick Filters */}
+          <div className="flex flex-wrap items-center gap-2">
+            {[
+              { id: 'All', label: 'All Users', count: totalUsersCount },
+              { id: 'Allowed', label: 'Allowed Only', count: allowedUsersCount },
+              { id: 'Banned', label: 'Suspended Only', count: bannedUsersCount },
+              { id: 'Admins', label: 'Administrators', count: adminUsersCount },
+              { id: 'Members', label: 'Standard Users', count: totalUsersCount - adminUsersCount }
+            ].map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => setStatusFilter(tab.id)}
+                className={`px-4 py-2.5 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                  statusFilter === tab.id
+                    ? 'bg-slate-800 text-white shadow-sm'
+                    : 'bg-slate-50 hover:bg-slate-100 text-slate-600 hover:text-slate-800 border border-slate-200/60'
+                }`}
+              >
+                {tab.label} ({tab.count})
+              </button>
+            ))}
+          </div>
+
+          <div className="relative w-full lg:w-80">
+            <Search className="absolute left-3.5 top-3 text-slate-400" size={16} />
             <input
               type="text"
-              placeholder="Search users..."
+              placeholder="Search by name or email..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-4 py-2 text-sm rounded-xl bg-slate-50 border border-slate-200 text-slate-800 placeholder-slate-400 focus:outline-none focus:border-emerald-605"
+              className="w-full pl-10 pr-4 py-2.5 text-sm rounded-xl bg-slate-50 border border-slate-200 text-slate-800 placeholder-slate-400 focus:outline-none focus:border-indigo-650 font-semibold"
             />
           </div>
         </div>
@@ -1137,77 +1304,113 @@ const WorkspaceUsers = () => {
           <table className="w-full text-left border-collapse text-sm">
             <thead>
               <tr className="border-b border-slate-100 text-slate-400 font-bold text-xs uppercase tracking-wider">
-                <th className="pb-3">User Details</th>
-                {isGlobalAdmin && <th className="pb-3">Workspace (Tenant)</th>}
-                <th className="pb-3">Joined On</th>
-                <th className="pb-3">Account access</th>
-                <th className="pb-3 text-right">Actions</th>
+                <th className="pb-3.5">User Profile Details</th>
+                {isGlobalAdmin && <th className="pb-3.5">Workspace Organization</th>}
+                <th className="pb-3.5">Role rank</th>
+                <th className="pb-3.5">Joined On</th>
+                <th className="pb-3.5">Account access</th>
+                <th className="pb-3.5 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {filteredUsers.map((member) => {
-                return (
-                  <tr key={member._id} className="text-slate-700 hover:bg-slate-50/50">
-                    <td className="py-4">
-                      <div className="font-bold text-slate-850">{member.name}</div>
-                      <div className="text-xs text-slate-450 font-semibold">{member.email}</div>
-                    </td>
-                    {isGlobalAdmin && (
-                      <td className="py-4 font-bold text-indigo-650">
-                        {member.tenantId?.companyName || member.tenantId?.name || 'Global Admin'}
+              {filteredUsers.length === 0 ? (
+                <tr>
+                  <td colSpan={isGlobalAdmin ? 6 : 5} className="py-12 text-center text-slate-400 font-bold">
+                    No registry matches found under the selected filters.
+                  </td>
+                </tr>
+              ) : (
+                filteredUsers.map((member) => {
+                  const initial = (member.name || member.email || 'U').charAt(0).toUpperCase();
+                  const avatarColor = getAvatarColor(member.name);
+                  return (
+                    <tr key={member._id} className="text-slate-700 hover:bg-slate-50/40 transition-colors group">
+                      <td className="py-4">
+                        <div className="flex items-center gap-3">
+                          <div className={`w-10 h-10 rounded-2xl bg-gradient-to-br ${avatarColor} text-white flex items-center justify-center font-black text-sm shadow-sm`}>
+                            {initial}
+                          </div>
+                          <div>
+                            <div className="font-extrabold text-slate-800 text-sm group-hover:text-indigo-600 transition-colors">{member.name}</div>
+                            <div className="text-xs text-slate-400 font-semibold">{member.email}</div>
+                          </div>
+                        </div>
                       </td>
-                    )}
-                    <td className="py-4 text-xs font-bold text-slate-500">
-                      {member.createdAt ? new Date(member.createdAt).toLocaleDateString() : 'N/A'}
-                    </td>
-                    <td className="py-4">
-                      <button
-                        onClick={() => handleToggleUserActive(member._id, member.isActive)}
-                        className={`flex items-center gap-1.5 cursor-pointer font-bold text-xs ${
-                          member.isActive ? 'text-emerald-600 hover:text-emerald-700' : 'text-red-500 hover:text-red-655'
-                        }`}
-                      >
-                        {member.isActive ? <CheckCircle size={15} /> : <XCircle size={15} />}
-                        {member.isActive ? 'ALLOWED' : 'BANNED'}
-                      </button>
-                    </td>
-                    <td className="py-4 text-right">
-                      <div className="flex items-center justify-end gap-2.5">
-                        {member.tenantId && (
+                      {isGlobalAdmin && (
+                        <td className="py-4">
+                          <span className="font-bold text-indigo-650 bg-indigo-50 border border-indigo-100 px-2.5 py-1 rounded-xl text-xs">
+                            {member.tenantId?.companyName || member.tenantId?.name || 'Global Admin Platform'}
+                          </span>
+                        </td>
+                      )}
+                      <td className="py-4">
+                        <span className={`inline-flex items-center gap-1 text-[10px] font-black uppercase px-2 py-0.5 rounded-lg border ${
+                          !member.tenantId 
+                            ? 'bg-purple-50 text-purple-700 border-purple-100'
+                            : member.role === 'Admin'
+                            ? 'bg-indigo-50 text-indigo-700 border-indigo-100'
+                            : 'bg-slate-100 text-slate-700 border-slate-200'
+                        }`}>
+                          {!member.tenantId ? 'Platform Admin' : member.role === 'Admin' ? 'Workspace Admin' : 'Staff Employee'}
+                        </span>
+                      </td>
+                      <td className="py-4 text-xs font-bold text-slate-500">
+                        <div className="flex items-center gap-1 text-slate-500">
+                          <Calendar size={13} className="text-slate-400" />
+                          {member.createdAt ? new Date(member.createdAt).toLocaleDateString() : 'N/A'}
+                        </div>
+                      </td>
+                      <td className="py-4">
+                        <button
+                          onClick={() => handleToggleUserActive(member._id, member.isActive)}
+                          className={`inline-flex items-center gap-1.5 cursor-pointer font-black text-[10px] uppercase px-3 py-1.5 rounded-full border transition-all ${
+                            member.isActive 
+                              ? 'bg-emerald-50 border-emerald-150 text-emerald-700 hover:bg-emerald-100 shadow-sm' 
+                              : 'bg-rose-50 border-rose-150 text-rose-700 hover:bg-rose-100 shadow-sm'
+                          }`}
+                        >
+                          {member.isActive ? <CheckCircle size={13} /> : <XCircle size={13} />}
+                          {member.isActive ? 'ALLOWED' : 'BANNED'}
+                        </button>
+                      </td>
+                      <td className="py-4 text-right">
+                        <div className="flex items-center justify-end gap-2">
+                          {member.tenantId && (
+                            <button
+                              onClick={() => handleOpenTrackPage(member)}
+                              className="px-3 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-600 border border-indigo-150 text-indigo-700 hover:text-white text-xs font-black flex items-center gap-1.5 cursor-pointer transition-all shadow-sm"
+                            >
+                              <Activity size={13} /> Track Report
+                            </button>
+                          )}
                           <button
-                            onClick={() => handleOpenTrackPage(member)}
-                            className="px-2.5 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-150 border border-indigo-150 text-indigo-700 text-xs font-bold flex items-center gap-1 cursor-pointer transition-colors shadow-sm"
+                            onClick={() => handleOpenPermissions(member)}
+                            className="p-2 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-650 hover:text-slate-800 border border-slate-200 cursor-pointer transition-all"
+                            title="Configure Access Permissions"
                           >
-                            <Activity size={12} /> Track Report
+                            <Settings size={13} />
                           </button>
-                        )}
-                        <button
-                          onClick={() => handleOpenPermissions(member)}
-                          className="p-2 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-150 cursor-pointer"
-                          title="Configure Page Access Permissions"
-                        >
-                          <Settings size={13} />
-                        </button>
-                        <button
-                          onClick={() => {
-                            setEditingUser(member);
-                          }}
-                          className="p-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 hover:text-slate-800 border border-slate-200 cursor-pointer"
-                          title="Change Password"
-                        >
-                          <Edit2 size={13} />
-                        </button>
-                        <button
-                          onClick={() => handleDeleteUser(member._id)}
-                          className="p-2 rounded-lg bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 cursor-pointer"
-                        >
-                          <Trash2 size={13} />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
+                          <button
+                            onClick={() => {
+                              setEditingUser(member);
+                            }}
+                            className="p-2 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-650 hover:text-slate-800 border border-slate-200 cursor-pointer transition-all"
+                            title="Edit Credentials"
+                          >
+                            <Edit2 size={13} />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteUser(member._id)}
+                            className="p-2 rounded-xl bg-rose-50 hover:bg-rose-500 text-rose-600 hover:text-white border border-rose-200 cursor-pointer transition-all"
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
             </tbody>
           </table>
         </div>

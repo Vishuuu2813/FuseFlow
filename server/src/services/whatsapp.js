@@ -1,4 +1,4 @@
-import makeWASocket, { DisconnectReason, fetchLatestBaileysVersion } from '@whiskeysockets/baileys';
+import makeWASocket, { DisconnectReason, fetchLatestBaileysVersion, extractMessageContent } from '@whiskeysockets/baileys';
 import pino from 'pino';
 import { useMongoAuthState } from './mongoAuthState.js';
 import WhatsAppSession from '../models/WhatsAppSession.js';
@@ -17,15 +17,31 @@ import { queryAIResponse } from './ai.js';
 export const sessions = {};
 export const connectionTimeouts = {};
 
+// LID → phone number mapping per session (populated by contacts.upsert event)
+// e.g. { '120031870476524': '919548033751' }
+const lidPhoneMap = {};
+
 const getMessageText = (msg) => {
   if (!msg.message) return '';
-  return (
-    msg.message.conversation ||
-    msg.message.extendedTextMessage?.text ||
-    msg.message.buttonsResponseMessage?.selectedButtonId ||
-    msg.message.listResponseMessage?.singleSelectReply?.selectedRowId ||
-    ''
-  );
+  const content = extractMessageContent(msg.message);
+  if (!content) return '';
+  
+  if (content.conversation) return content.conversation;
+  if (content.extendedTextMessage?.text) return content.extendedTextMessage.text;
+  if (content.buttonsResponseMessage?.selectedButtonId) return content.buttonsResponseMessage.selectedButtonId;
+  if (content.listResponseMessage?.singleSelectReply?.selectedRowId) return content.listResponseMessage.singleSelectReply.selectedRowId;
+  if (content.imageMessage?.caption) return content.imageMessage.caption;
+  if (content.videoMessage?.caption) return content.videoMessage.caption;
+  
+  if (content.imageMessage) return '[Image]';
+  if (content.videoMessage) return '[Video]';
+  if (content.audioMessage) return '[Audio]';
+  if (content.documentMessage) return '[Document]';
+  if (content.stickerMessage) return '[Sticker]';
+  if (content.contactMessage || content.contactsArrayMessage) return '[Contact]';
+  if (content.locationMessage) return '[Location]';
+  
+  return '';
 };
 
 const normalizeReceiptStatus = (status) => {
@@ -89,14 +105,106 @@ const updateMessageDeliveryStatus = async (messageId, receiptStatus) => {
   }
 };
 
+const getSenderPhone = async (tenantId, msg, sessionKey) => {
+  // 1. Check remoteJidAlt first
+  let jid = msg.key?.remoteJidAlt || msg.key?.remoteJid || '';
+  
+  // 2. Check participantAlt if remoteJidAlt is not set
+  if (jid.endsWith('@lid') && msg.key?.participantAlt) {
+    jid = msg.key.participantAlt;
+  }
+  
+  // 3. Check senderPn
+  if (jid.endsWith('@lid') && msg.key?.senderPn) {
+    jid = msg.key.senderPn;
+  }
+
+  const raw = jid.replace(/@s\.whatsapp\.net|@c\.us|@g\.us|@lid/, '').split(':')[0];
+
+  // 4. Resolve LID using database or memory map
+  if (jid.endsWith('@lid')) {
+    // A. Check in-memory map
+    const sessionMap = lidPhoneMap[sessionKey] || {};
+    const resolved = sessionMap[raw];
+    if (resolved) {
+      console.log(`[WhatsApp] Resolved @lid ${raw} → phone ${resolved} via memory map`);
+      return resolved;
+    }
+
+    // B. Check Contact database by LID JID
+    try {
+      const contactByLid = await Contact.findOne({ tenantId, lid: raw });
+      if (contactByLid) {
+        if (!lidPhoneMap[sessionKey]) lidPhoneMap[sessionKey] = {};
+        lidPhoneMap[sessionKey][raw] = contactByLid.phone;
+        console.log(`[WhatsApp] Resolved @lid ${raw} → phone ${contactByLid.phone} via Contact DB`);
+        return contactByLid.phone;
+      }
+    } catch (dbErr) {
+      console.error(`[WhatsApp] DB error resolving LID:`, dbErr.message);
+    }
+  }
+
+  return raw;
+};
+
+const isValidPhone = (phone) => {
+  // Real phone numbers or fallback LID number: 7-20 digits
+  return /^\d{7,20}$/.test(phone);
+};
+
 const handleIncomingMessage = async (tenantId, sessionId, sock, msg) => {
   try {
     const jid = msg.key.remoteJid;
+    if (!jid || jid.endsWith('@g.us') || jid === 'status@broadcast') return;
+
     const text = getMessageText(msg).trim();
     if (!text) return;
 
-    const phone = jid.split('@')[0];
+    const sessionKey = sessionId.toString();
+    let phone = await getSenderPhone(tenantId, msg, sessionKey);
+
+    // If still invalid length or pattern, skip
+    if (!isValidPhone(phone)) {
+      console.log(`[WhatsApp] Skipping message with invalid JID format: ${jid} (extracted: ${phone})`);
+      return;
+    }
     const normalizedText = text.toLowerCase().trim();
+
+    // Ensure contact exists
+    let contact = await Contact.findOne({ tenantId, phone });
+    const isLidJid = jid.endsWith('@lid');
+    const lidNum = isLidJid ? jid.replace('@lid', '').split(':')[0] : null;
+
+    if (!contact) {
+      contact = await Contact.create({
+        tenantId,
+        phone,
+        name: msg.pushName || 'New Contact',
+        stage: 'lead',
+        lid: lidNum,
+      });
+      console.log(`[WhatsApp] Created new contact. Phone: ${phone} | LID: ${lidNum}`);
+    } else if (lidNum && contact.lid !== lidNum) {
+      contact.lid = lidNum;
+      await contact.save();
+      console.log(`[WhatsApp] Updated contact LID mapping. Phone: ${phone} | LID: ${lidNum}`);
+    }
+
+    // Save incoming message log
+    const savedIncomingLog = await MessageLog.create({
+      tenantId,
+      whatsappSessionId: sessionId,
+      phone,
+      messageText: text,
+      status: 'RECEIVED',
+      direction: 'INCOMING',
+      messageId: msg.key.id,
+      sentAt: new Date(),
+    });
+
+    // Notify room of new incoming message
+    emitToTenant(tenantId, 'chat-message', savedIncomingLog);
 
     if (['stop', 'unsubscribe', 'opt out', 'optout'].includes(normalizedText)) {
       await Contact.findOneAndUpdate(
@@ -200,37 +308,42 @@ const handleIncomingMessage = async (tenantId, sessionId, sock, msg) => {
             messageOptions.image = { url: rule.mediaUrl };
           }
           const sentMsg = await sock.sendMessage(jid, messageOptions);
-          await MessageLog.create({
+          const savedLog = await MessageLog.create({
             tenantId,
             whatsappSessionId: sessionId,
             phone,
             messageText: rule.replyText,
             mediaUrl: rule.mediaUrl,
             status: 'SENT',
+            direction: 'OUTGOING',
             messageId: sentMsg?.key?.id,
             sentAt: new Date(),
           });
+          emitToTenant(tenantId, 'chat-message', savedLog);
         } else if (rule.replyMode === 'AI') {
           // Query AI with knowledge base context
           const aiResponse = await queryAIResponse(tenantId, text);
           if (aiResponse) {
             const sentMsg = await sock.sendMessage(jid, { text: aiResponse });
-            await MessageLog.create({
+            const savedLog = await MessageLog.create({
               tenantId,
               whatsappSessionId: sessionId,
               phone,
               messageText: aiResponse,
               status: 'SENT',
+              direction: 'OUTGOING',
               messageId: sentMsg?.key?.id,
               sentAt: new Date(),
             });
+            emitToTenant(tenantId, 'chat-message', savedLog);
           }
         }
         break; // Trigger first match only
       }
     }
   } catch (error) {
-    // Fail silently in message trigger to avoid crashing thread
+    // Log errors instead of failing silently - helps debug message delivery issues
+    console.error(`[WhatsApp] Error in handleIncomingMessage:`, error.message);
   }
 };
 
@@ -238,6 +351,12 @@ export const connectToWhatsApp = async (tenantId, sessionId) => {
   const sessionKey = sessionId.toString();
   if (sessions[sessionKey]) {
     return sessions[sessionKey];
+  }
+
+  const sessionExists = await WhatsAppSession.findById(sessionId);
+  if (!sessionExists) {
+    console.log(`[WhatsApp] Session ${sessionId} not found in database. Skipping connection.`);
+    return null;
   }
 
   // Set connection/pairing timeout (e.g. 2 minutes)
@@ -384,9 +503,13 @@ export const connectToWhatsApp = async (tenantId, sessionId) => {
 
         if (retryCount <= 5 || isRestartRequired) {
           console.log(`[WhatsApp] Reconnecting session ${sessionId}${isRestartRequired ? ' (Restart Required)' : ` (Attempt ${retryCount}/5)`}...`);
-          const newSock = await connectToWhatsApp(tenantId, sessionId);
-          if (newSock) {
-            newSock.retryCount = isRestartRequired ? 0 : retryCount;
+          try {
+            const newSock = await connectToWhatsApp(tenantId, sessionId);
+            if (newSock) {
+              newSock.retryCount = isRestartRequired ? 0 : retryCount;
+            }
+          } catch (err) {
+            console.error(`[WhatsApp] Failed to reconnect session ${sessionId}:`, err.message);
           }
         } else {
           // Clear timeout
@@ -410,16 +533,63 @@ export const connectToWhatsApp = async (tenantId, sessionId) => {
 
   sock.ev.on('creds.update', saveCreds);
 
+  // Build LID ↔ phone mapping so that @lid incoming messages can be resolved to real phone numbers
+  const buildLidMapping = async (contacts) => {
+    if (contacts && contacts.length > 0) {
+      console.log(`[WhatsApp] buildLidMapping sync batch size: ${contacts.length}. Sample contact:`, JSON.stringify(contacts[0]));
+    }
+    for (const contact of contacts) {
+      const id = contact.id || '';
+      const lid = contact.lid || '';
+      if (id.endsWith('@s.whatsapp.net') && lid) {
+        const phone = id.replace('@s.whatsapp.net', '').split(':')[0];
+        const lidNum = lid.replace('@lid', '').split(':')[0];
+        if (phone && lidNum) {
+          if (!lidPhoneMap[sessionKey]) lidPhoneMap[sessionKey] = {};
+          lidPhoneMap[sessionKey][lidNum] = phone;
+          console.log(`[WhatsApp] LID mapped: ${lidNum} → ${phone}`);
+
+          try {
+            // 1. Update/set LID on the contact with the real phone number
+            await Contact.updateOne(
+              { tenantId, phone },
+              { $set: { lid: lidNum } }
+            );
+
+            // 2. If a contact was accidentally created using the LID, delete it
+            await Contact.deleteOne({ tenantId, phone: lidNum });
+
+            // 3. Migrate any message logs that were saved under the LID to the real phone number
+            const updateResult = await MessageLog.updateMany(
+              { tenantId, phone: lidNum },
+              { $set: { phone: phone } }
+            );
+            if (updateResult.modifiedCount > 0) {
+              console.log(`[WhatsApp] Migrated ${updateResult.modifiedCount} message logs from LID ${lidNum} to phone ${phone}`);
+            }
+          } catch (dbErr) {
+            console.error(`[WhatsApp] DB error in buildLidMapping:`, dbErr.message);
+          }
+        }
+      }
+    }
+  };
+
+  sock.ev.on('contacts.upsert', buildLidMapping);
+  sock.ev.on('contacts.update', buildLidMapping);
+
   // Handle incoming messages
   sock.ev.on('messages.upsert', async (m) => {
     if (m.type === 'notify') {
       for (const msg of m.messages) {
         if (!msg.key.fromMe && msg.message) {
+          console.log(`[WhatsApp][IncomingMessage] Full message object details:`, JSON.stringify(msg, null, 2));
           await handleIncomingMessage(tenantId, sessionId, sock, msg);
         }
       }
     }
   });
+
 
   sock.ev.on('messages.update', async (updates) => {
     for (const item of updates) {
