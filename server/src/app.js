@@ -39,7 +39,7 @@ const server = http.createServer(app);
 
 const allowedOrigins = (
   process.env.CLIENT_ORIGINS ||
-  'http://localhost:5173,http://127.0.0.1:5173,https://splendorous-concha-a6cb6b.netlify.app'
+  'http://localhost:5173,http://127.0.0.1:5173'
 )
   .split(',')
   .map((origin) => origin.trim())
