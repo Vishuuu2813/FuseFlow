@@ -37,6 +37,9 @@ const logger = pino({
 const app = express();
 const server = http.createServer(app);
 
+// Trust Railway's proxy so real client IPs are used for rate limiting
+app.set('trust proxy', 1);
+
 const allowedOrigins = (
   process.env.CLIENT_ORIGINS ||
   'http://localhost:5173,http://127.0.0.1:5173,https://splendorous-concha-a6cb6b.netlify.app'
