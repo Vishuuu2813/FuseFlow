@@ -1,6 +1,7 @@
 import axios from 'axios';
 
-const API_URL = 'http://localhost:5000/api';
+const API_URL = import.meta.env.VITE_API_URL || 'https://fuseflow-production.up.railway.app/api';
+const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 'https://fuseflow-production.up.railway.app';
 
 const api = axios.create({
   baseURL: API_URL,
@@ -46,4 +47,5 @@ api.interceptors.response.use(
   }
 );
 
+export { SOCKET_URL };
 export default api;

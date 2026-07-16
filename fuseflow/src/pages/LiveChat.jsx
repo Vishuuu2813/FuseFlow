@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import api from '../services/api';
+import api, { SOCKET_URL } from '../services/api';
 import { io } from 'socket.io-client';
 import { useAuth } from '../context/AuthContext';
 import {
@@ -167,7 +167,7 @@ const LiveChat = () => {
   useEffect(() => {
     fetchChats();
 
-    const socket = io('http://localhost:5000', {
+    const socket = io(SOCKET_URL, {
       auth: { token: localStorage.getItem('accessToken') },
       reconnection: true,
       reconnectionDelay: 1000,

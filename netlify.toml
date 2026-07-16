@@ -1,0 +1,14 @@
+[build]
+  base = "fuseflow"
+  publish = "fuseflow/dist"
+  command = "npm run build"
+
+[build.environment]
+  NODE_VERSION = "20"
+  VITE_API_URL = "https://fuseflow-production.up.railway.app/api"
+  VITE_SOCKET_URL = "https://fuseflow-production.up.railway.app"
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
