@@ -25,6 +25,7 @@ import adminRouter from './routes/admin.js';
 import flowRouter from './routes/flow.js';
 import chatRouter from './routes/chat.js';
 import webhookRouter from './routes/webhook.js';
+import templateRouter from './routes/template.js';
 
 const logger = pino({
   transport: {
@@ -89,8 +90,8 @@ app.use('/api/auth/login', rateLimit({
   legacyHeaders: false,
   message: { message: 'Too many login attempts. Please try again later.' }
 }));
-app.use(express.json({ limit: '1mb' }));
-app.use(express.urlencoded({ extended: true, limit: '1mb' }));
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 app.use(cookieParser());
 app.use('/uploads', express.static('uploads'));
 
@@ -105,7 +106,31 @@ app.use('/api/admin', adminRouter);
 app.use('/api/flows', flowRouter);
 app.use('/api/chat', chatRouter);
 app.use('/api/webhooks', webhookRouter);
+app.use('/api/templates', templateRouter);
 
+
+// Click Tracking Redirect Route
+app.get('/track/click/:campaignId', async (req, res) => {
+  const { campaignId } = req.params;
+  const { url } = req.query;
+  try {
+    if (!url) {
+      return res.status(400).send('Invalid redirect URL.');
+    }
+    const Campaign = (await import('./models/Campaign.js')).default;
+    await Campaign.findByIdAndUpdate(campaignId, {
+      $inc: { 'stats.clicks': 1 }
+    });
+    res.redirect(url);
+  } catch (err) {
+    logger.error(`Click tracking error: ${err.message}`);
+    if (url) {
+      res.redirect(url);
+    } else {
+      res.status(500).send('Server Error');
+    }
+  }
+});
 
 // Base Health Check
 app.get('/health', (req, res) => {

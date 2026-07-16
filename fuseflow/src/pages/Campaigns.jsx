@@ -34,6 +34,7 @@ const Campaigns = () => {
   const [delaySeconds, setDelaySeconds] = useState(5);
   const [scheduleType, setScheduleType] = useState('IMMEDIATE');
   const [scheduledAtTime, setScheduledAtTime] = useState('');
+  const [buttons, setButtons] = useState([]);
 
   // Audience Target Selection States
   const [targetType, setTargetType] = useState('ALL');
@@ -85,6 +86,7 @@ const Campaigns = () => {
                 ...c.stats,
                 sent: data.stats.sent,
                 failed: data.stats.failed,
+                clicks: data.stats.clicks || 0,
               },
               status: data.status,
             };
@@ -138,6 +140,7 @@ const Campaigns = () => {
           contactIds: selectedContactIds
         },
         scheduledAt: scheduleType === 'SCHEDULED' ? new Date(scheduledAtTime) : new Date(),
+        buttons,
       });
       
       setCampaigns((prev) => [data, ...prev]);
@@ -154,6 +157,7 @@ const Campaigns = () => {
       setDelaySeconds(5);
       setScheduleType('IMMEDIATE');
       setScheduledAtTime('');
+      setButtons([]);
       
       setShowCreateModal(false);
       setSuccess('Campaign created in Draft status.');
@@ -346,9 +350,11 @@ const Campaigns = () => {
                       style={{ width: `${pct}%` }}
                     ></div>
                   </div>
-                  <div className="flex gap-4 text-[10px] font-bold">
+                  <div className="flex flex-wrap gap-4 text-[10px] font-bold">
                     <span className="text-emerald-655">Sent: {camp.stats.sent}</span>
                     <span className="text-red-500">Failed: {camp.stats.failed}</span>
+                    <span className="text-indigo-600">Link Clicks: {camp.stats.clicks || 0}</span>
+                    <span className="text-purple-600">CTR: {camp.stats.sent ? Math.round(((camp.stats.clicks || 0) / camp.stats.sent) * 100) : 0}%</span>
                   </div>
                 </div>
               </div>
@@ -360,7 +366,7 @@ const Campaigns = () => {
       {/* Create Modal */}
       {showCreateModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 backdrop-blur-sm p-4 overflow-y-auto">
-          <div className="w-full max-w-xl bg-white border border-slate-250 shadow-2xl rounded-3xl p-6 my-8">
+          <div className="w-full max-w-5xl bg-white border border-slate-250 shadow-2xl rounded-3xl p-6 my-8">
             <div className="flex justify-between items-center mb-4 pb-2 border-b border-slate-100">
               <h3 className="text-lg font-extrabold text-slate-850">Create Broadcast Campaign</h3>
               <button
@@ -372,258 +378,398 @@ const Campaigns = () => {
               </button>
             </div>
             
-            <form onSubmit={handleCreate} className="flex flex-col gap-4">
-              <div>
-                <label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase">Campaign Name</label>
-                <input
-                  type="text"
-                  required
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="e.g. July Summer Promo"
-                  className="w-full px-4 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-slate-800 focus:outline-none focus:border-emerald-600 text-sm font-semibold"
-                />
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <form onSubmit={handleCreate} className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+              {/* Left Column: Core Campaign Config */}
+              <div className="lg:col-span-7 flex flex-col gap-4">
                 <div>
-                  <label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase">Select WhatsApp Device</label>
-                  {sessions.length === 0 ? (
-                    <p className="text-xs text-red-500 mt-1 font-semibold">No active WhatsApp device linked.</p>
-                  ) : (
-                    <select
+                  <label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase">Campaign Name</label>
+                  <input
+                    type="text"
+                    required
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    placeholder="e.g. July Summer Promo"
+                    className="w-full px-4 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-slate-800 focus:outline-none focus:border-emerald-600 text-sm font-semibold"
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase">Select WhatsApp Device</label>
+                    {sessions.length === 0 ? (
+                      <p className="text-xs text-red-500 mt-1 font-semibold">No active WhatsApp device linked.</p>
+                    ) : (
+                      <select
+                        required
+                        value={sessionId}
+                        onChange={(e) => setSessionId(e.target.value)}
+                        className="w-full px-4 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-slate-700 focus:outline-none focus:border-emerald-600 text-sm font-bold cursor-pointer"
+                      >
+                        <option value="">Choose device...</option>
+                        {sessions.map((s) => (
+                          <option key={s._id} value={s._id}>{s.sessionName}</option>
+                        ))}
+                      </select>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase flex items-center gap-1">
+                      <Clock size={13} /> Dispatch Delay (Sec)
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="300"
                       required
-                      value={sessionId}
-                      onChange={(e) => setSessionId(e.target.value)}
-                      className="w-full px-4 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-slate-700 focus:outline-none focus:border-emerald-600 text-sm font-bold cursor-pointer"
+                      value={delaySeconds}
+                      onChange={(e) => setDelaySeconds(parseInt(e.target.value) || 5)}
+                      className="w-full px-4 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-slate-850 focus:outline-none focus:border-emerald-600 text-sm font-semibold"
+                    />
+                  </div>
+                </div>
+
+                {/* Scheduling Section */}
+                <div className="p-4 rounded-2xl border border-slate-200 bg-slate-50/50 flex flex-col gap-3">
+                  <label className="block text-xs font-black text-slate-655 uppercase flex items-center gap-1">
+                    <Clock size={13} className="text-emerald-650" /> Campaign Schedule
+                  </label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setScheduleType('IMMEDIATE')}
+                      className={`py-2 px-1 rounded-xl text-xs font-bold transition-all border cursor-pointer ${
+                        scheduleType === 'IMMEDIATE'
+                          ? 'bg-emerald-600 border-emerald-600 text-white shadow-sm'
+                          : 'bg-white border-slate-200 text-slate-650 hover:bg-slate-50'
+                      }`}
                     >
-                      <option value="">Choose device...</option>
-                      {sessions.map((s) => (
-                        <option key={s._id} value={s._id}>{s.sessionName}</option>
-                      ))}
-                    </select>
+                      Send Immediately
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setScheduleType('SCHEDULED')}
+                      className={`py-2 px-1 rounded-xl text-xs font-bold transition-all border cursor-pointer ${
+                        scheduleType === 'SCHEDULED'
+                          ? 'bg-emerald-600 border-emerald-600 text-white shadow-sm'
+                          : 'bg-white border-slate-200 text-slate-650 hover:bg-slate-50'
+                      }`}
+                    >
+                      Schedule for Later
+                    </button>
+                  </div>
+
+                  {scheduleType === 'SCHEDULED' && (
+                    <div className="flex flex-col gap-1.5 mt-1">
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase">Start Date & Time</label>
+                      <input
+                        type="datetime-local"
+                        required
+                        value={scheduledAtTime}
+                        onChange={(e) => setScheduledAtTime(e.target.value)}
+                        className="w-full px-4 py-2 rounded-xl bg-white border border-slate-200 text-slate-800 text-xs focus:outline-none focus:border-emerald-655 font-semibold cursor-pointer"
+                      />
+                    </div>
+                  )}
+                </div>
+
+                {/* Target Scope Categories */}
+                <div className="p-4 rounded-2xl border border-slate-200 bg-slate-50/50 flex flex-col gap-3">
+                  <div className="flex justify-between items-center">
+                    <label className="block text-xs font-black text-slate-600 uppercase flex items-center gap-1">
+                      <Target size={13} className="text-indigo-650" /> Target Audience Segment
+                    </label>
+                  </div>
+                  
+                  {/* Target Type selection */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    {[
+                      { value: 'ALL', label: 'All Contacts' },
+                      { value: 'STAGE', label: 'By CRM Stage' },
+                      { value: 'TAG', label: 'By Tag' },
+                      { value: 'MANUAL', label: 'Select Manually' }
+                    ].map((btn) => (
+                      <button
+                        key={btn.value}
+                        type="button"
+                        onClick={() => setTargetType(btn.value)}
+                        className={`py-2 px-1 rounded-xl text-xs font-bold transition-all border cursor-pointer ${
+                          targetType === btn.value
+                            ? 'bg-indigo-600 border-indigo-600 text-white shadow-sm'
+                            : 'bg-white border-slate-200 text-slate-650 hover:bg-slate-50'
+                        }`}
+                      >
+                        {btn.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Sub UI for STAGE */}
+                  {targetType === 'STAGE' && (
+                    <div className="flex flex-col gap-1.5 mt-1">
+                      <select
+                        value={targetStage}
+                        onChange={(e) => setTargetStage(e.target.value)}
+                        className="w-full px-3 py-2 rounded-xl bg-white border border-slate-200 text-slate-700 text-xs focus:outline-none focus:border-indigo-655 font-semibold cursor-pointer"
+                      >
+                        <option value="">Select Stage...</option>
+                        <option value="lead">Lead</option>
+                        <option value="contact">Contact</option>
+                        <option value="demo">Demo Scheduled</option>
+                        <option value="won">Won / Customer</option>
+                        <option value="lost">Lost</option>
+                      </select>
+                      <p className="text-[10px] text-indigo-600 font-extrabold">
+                        Messages will be sent to {contacts.filter((c) => c.stage === targetStage).length} matching contacts.
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Sub UI for TAG */}
+                  {targetType === 'TAG' && (
+                    <div className="flex flex-col gap-1.5 mt-1">
+                      <input
+                        type="text"
+                        placeholder="Type tag name... (e.g. VIP)"
+                        value={targetTag}
+                        onChange={(e) => setTargetTag(e.target.value)}
+                        className="w-full px-3 py-2 rounded-xl bg-white border border-slate-200 text-slate-800 text-xs focus:outline-none focus:border-indigo-650 font-semibold"
+                      />
+                      <p className="text-[10px] text-indigo-600 font-extrabold">
+                        Messages will be sent to {contacts.filter((c) => c.tags?.includes(targetTag)).length} matching contacts.
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Sub UI for MANUAL */}
+                  {targetType === 'MANUAL' && (
+                    <div className="flex flex-col gap-2 mt-1">
+                      <div className="flex justify-between items-center">
+                        <span className="text-[10px] font-bold text-slate-450">{selectedContactIds.length} recipient(s) selected</span>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedContactIds(selectedContactIds.length === contacts.length ? [] : contacts.map(c => c._id))}
+                          className="text-[10px] text-indigo-600 hover:text-indigo-700 font-black uppercase hover:underline cursor-pointer"
+                        >
+                          {selectedContactIds.length === contacts.length ? 'Deselect All' : 'Select All'}
+                        </button>
+                      </div>
+
+                      <div className="relative">
+                        <Search className="absolute left-2.5 top-2 text-slate-400" size={13} />
+                        <input
+                          type="text"
+                          placeholder="Search contact by name or number..."
+                          value={searchContactQuery}
+                          onChange={(e) => setSearchContactQuery(e.target.value)}
+                          className="w-full pl-8 pr-3 py-1.5 rounded-lg bg-white border border-slate-200 text-slate-800 text-xs focus:outline-none focus:border-indigo-655"
+                        />
+                      </div>
+
+                      <div className="max-h-36 overflow-y-auto flex flex-col gap-1 border border-slate-150 rounded-xl p-2 bg-white">
+                        {contacts
+                          .filter(c => c.name?.toLowerCase().includes(searchContactQuery.toLowerCase()) || c.phone?.includes(searchContactQuery))
+                          .map((c) => {
+                            const isSelected = selectedContactIds.includes(c._id);
+                            return (
+                              <label key={c._id} className="flex items-center gap-2.5 px-2 py-1.5 rounded-lg hover:bg-slate-50 cursor-pointer text-xs font-semibold text-slate-700">
+                                <input
+                                  type="checkbox"
+                                  checked={isSelected}
+                                  onChange={() => {
+                                    if (isSelected) {
+                                      setSelectedContactIds(selectedContactIds.filter(id => id !== c._id));
+                                    } else {
+                                      setSelectedContactIds([...selectedContactIds, c._id]);
+                                    }
+                                  }}
+                                  className="rounded text-indigo-650 focus:ring-indigo-500"
+                                />
+                                <span>{c.name} <span className="text-slate-400 font-medium">(+{c.phone})</span></span>
+                              </label>
+                            );
+                          })}
+                      </div>
+                    </div>
                   )}
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase flex items-center gap-1">
-                    <Clock size={13} /> Dispatch Delay (Sec)
-                  </label>
-                  <input
-                    type="number"
-                    min="1"
-                    max="300"
+                  <label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase">Message Content (Personalization: use {"{{name}}"})</label>
+                  <textarea
                     required
-                    value={delaySeconds}
-                    onChange={(e) => setDelaySeconds(parseInt(e.target.value) || 5)}
-                    className="w-full px-4 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-slate-850 focus:outline-none focus:border-emerald-600 text-sm font-semibold"
+                    rows="4"
+                    value={messageText}
+                    onChange={(e) => setMessageText(e.target.value)}
+                    placeholder="Hello {{name}}, welcome to our workspace..."
+                    className="w-full px-4 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-slate-800 focus:outline-none focus:border-emerald-600 text-sm resize-none font-semibold"
+                  ></textarea>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase">Media Image URL (Optional)</label>
+                  <input
+                    type="url"
+                    value={mediaUrl}
+                    onChange={(e) => setMediaUrl(e.target.value)}
+                    placeholder="https://image-link.com/promo.png"
+                    className="w-full px-4 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-slate-800 focus:outline-none focus:border-emerald-600 text-sm font-semibold"
                   />
                 </div>
               </div>
 
-              {/* Scheduling Section */}
-              <div className="p-4 rounded-2xl border border-slate-200 bg-slate-50/50 flex flex-col gap-3">
-                <label className="block text-xs font-black text-slate-655 uppercase flex items-center gap-1">
-                  <Clock size={13} className="text-emerald-650" /> Campaign Schedule
-                </label>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setScheduleType('IMMEDIATE')}
-                    className={`py-2 px-1 rounded-xl text-xs font-bold transition-all border cursor-pointer ${
-                      scheduleType === 'IMMEDIATE'
-                        ? 'bg-emerald-600 border-emerald-600 text-white shadow-sm'
-                        : 'bg-white border-slate-200 text-slate-650 hover:bg-slate-50'
-                    }`}
-                  >
-                    Send Immediately
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setScheduleType('SCHEDULED')}
-                    className={`py-2 px-1 rounded-xl text-xs font-bold transition-all border cursor-pointer ${
-                      scheduleType === 'SCHEDULED'
-                        ? 'bg-emerald-600 border-emerald-600 text-white shadow-sm'
-                        : 'bg-white border-slate-200 text-slate-650 hover:bg-slate-50'
-                    }`}
-                  >
-                    Schedule for Later
-                  </button>
-                </div>
-
-                {scheduleType === 'SCHEDULED' && (
-                  <div className="flex flex-col gap-1.5 mt-1">
-                    <label className="block text-[10px] font-bold text-slate-500 uppercase">Start Date & Time</label>
-                    <input
-                      type="datetime-local"
-                      required
-                      value={scheduledAtTime}
-                      onChange={(e) => setScheduledAtTime(e.target.value)}
-                      className="w-full px-4 py-2 rounded-xl bg-white border border-slate-200 text-slate-800 text-xs focus:outline-none focus:border-emerald-655 font-semibold cursor-pointer"
-                    />
-                  </div>
-                )}
-              </div>
-
-              {/* Target Scope Categories */}
-              <div className="p-4 rounded-2xl border border-slate-200 bg-slate-50/50 flex flex-col gap-3">
-                <div className="flex justify-between items-center">
-                  <label className="block text-xs font-black text-slate-600 uppercase flex items-center gap-1">
-                    <Target size={13} className="text-indigo-650" /> Target Audience Segment
-                  </label>
-                </div>
-                
-                {/* Target Type selection */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                  {[
-                    { value: 'ALL', label: 'All Contacts' },
-                    { value: 'STAGE', label: 'By CRM Stage' },
-                    { value: 'TAG', label: 'By Tag' },
-                    { value: 'MANUAL', label: 'Select Manually' }
-                  ].map((btn) => (
-                    <button
-                      key={btn.value}
-                      type="button"
-                      onClick={() => setTargetType(btn.value)}
-                      className={`py-2 px-1 rounded-xl text-xs font-bold transition-all border cursor-pointer ${
-                        targetType === btn.value
-                          ? 'bg-indigo-600 border-indigo-600 text-white shadow-sm'
-                          : 'bg-white border-slate-200 text-slate-650 hover:bg-slate-50'
-                      }`}
-                    >
-                      {btn.label}
-                    </button>
-                  ))}
-                </div>
-
-                {/* Sub UI for STAGE */}
-                {targetType === 'STAGE' && (
-                  <div className="flex flex-col gap-1.5 mt-1">
-                    <select
-                      value={targetStage}
-                      onChange={(e) => setTargetStage(e.target.value)}
-                      className="w-full px-3 py-2 rounded-xl bg-white border border-slate-200 text-slate-700 text-xs focus:outline-none focus:border-indigo-650 font-semibold cursor-pointer"
-                    >
-                      <option value="">Select Stage...</option>
-                      <option value="lead">Lead</option>
-                      <option value="contact">Contact</option>
-                      <option value="demo">Demo Scheduled</option>
-                      <option value="won">Won / Customer</option>
-                      <option value="lost">Lost</option>
-                    </select>
-                    <p className="text-[10px] text-indigo-600 font-extrabold">
-                      Messages will be sent to {contacts.filter((c) => c.stage === targetStage).length} matching contacts.
-                    </p>
-                  </div>
-                )}
-
-                {/* Sub UI for TAG */}
-                {targetType === 'TAG' && (
-                  <div className="flex flex-col gap-1.5 mt-1">
-                    <input
-                      type="text"
-                      placeholder="Type tag name... (e.g. VIP)"
-                      value={targetTag}
-                      onChange={(e) => setTargetTag(e.target.value)}
-                      className="w-full px-3 py-2 rounded-xl bg-white border border-slate-200 text-slate-800 text-xs focus:outline-none focus:border-indigo-650 font-semibold"
-                    />
-                    <p className="text-[10px] text-indigo-600 font-extrabold">
-                      Messages will be sent to {contacts.filter((c) => c.tags?.includes(targetTag)).length} matching contacts.
-                    </p>
-                  </div>
-                )}
-
-                {/* Sub UI for MANUAL */}
-                {targetType === 'MANUAL' && (
-                  <div className="flex flex-col gap-2 mt-1">
+              {/* Right Column: Button Builder & Live Preview */}
+              <div className="lg:col-span-5 flex flex-col gap-4 justify-between border-l border-slate-100 lg:pl-6">
+                <div className="flex flex-col gap-4">
+                  {/* WhatsApp Buttons Editor */}
+                  <div className="p-4 rounded-2xl border border-slate-200 bg-slate-50/50 flex flex-col gap-3">
                     <div className="flex justify-between items-center">
-                      <span className="text-[10px] font-bold text-slate-450">{selectedContactIds.length} recipient(s) selected</span>
-                      <button
-                        type="button"
-                        onClick={() => setSelectedContactIds(selectedContactIds.length === contacts.length ? [] : contacts.map(c => c._id))}
-                        className="text-[10px] text-indigo-600 hover:text-indigo-700 font-black uppercase hover:underline cursor-pointer"
-                      >
-                        {selectedContactIds.length === contacts.length ? 'Deselect All' : 'Select All'}
-                      </button>
+                      <label className="block text-xs font-black text-slate-600 uppercase flex items-center gap-1">
+                        <Sliders size={13} className="text-emerald-650" /> Message Buttons (Max 3)
+                      </label>
+                      {buttons.length < 3 && (
+                        <button
+                          type="button"
+                          onClick={() => setButtons([...buttons, { type: 'quick_reply', displayText: '', payload: '' }])}
+                          className="text-[10px] text-emerald-600 hover:text-emerald-700 font-black uppercase hover:underline flex items-center gap-0.5 cursor-pointer"
+                        >
+                          <Plus size={10} /> Add Button
+                        </button>
+                      )}
                     </div>
 
-                    <div className="relative">
-                      <Search className="absolute left-2.5 top-2 text-slate-400" size={13} />
-                      <input
-                        type="text"
-                        placeholder="Search contact by name or number..."
-                        value={searchContactQuery}
-                        onChange={(e) => setSearchContactQuery(e.target.value)}
-                        className="w-full pl-8 pr-3 py-1.5 rounded-lg bg-white border border-slate-200 text-slate-800 text-xs focus:outline-none focus:border-indigo-655"
-                      />
-                    </div>
+                    {buttons.length === 0 ? (
+                      <p className="text-[10px] text-slate-400 font-semibold italic">No buttons added. Message will send as standard text.</p>
+                    ) : (
+                      <div className="flex flex-col gap-2.5 max-h-60 overflow-y-auto pr-1">
+                        {buttons.map((btn, index) => (
+                          <div key={index} className="p-3 bg-white border border-slate-200 rounded-xl flex flex-col gap-2 relative">
+                            <button
+                              type="button"
+                              onClick={() => setButtons(buttons.filter((_, i) => i !== index))}
+                              className="absolute top-2 right-2 text-slate-450 hover:text-red-500 cursor-pointer"
+                            >
+                              <X size={14} />
+                            </button>
+                            <div className="grid grid-cols-3 gap-2">
+                              <div>
+                                <label className="block text-[9px] font-bold text-slate-500 uppercase mb-1">Type</label>
+                                <select
+                                  value={btn.type}
+                                  onChange={(e) => {
+                                    const newBtns = [...buttons];
+                                    newBtns[index].type = e.target.value;
+                                    newBtns[index].payload = '';
+                                    setButtons(newBtns);
+                                  }}
+                                  className="w-full px-2 py-1.5 rounded-lg bg-slate-50 border border-slate-200 text-[10px] font-bold focus:outline-none"
+                                >
+                                  <option value="quick_reply">Quick Reply</option>
+                                  <option value="cta_url">URL Link</option>
+                                  <option value="cta_call">Call Button</option>
+                                </select>
+                              </div>
+                              <div className="col-span-2">
+                                <label className="block text-[9px] font-bold text-slate-500 uppercase mb-1">Button Text</label>
+                                <input
+                                  type="text"
+                                  required
+                                  maxLength="25"
+                                  value={btn.displayText}
+                                  onChange={(e) => {
+                                    const newBtns = [...buttons];
+                                    newBtns[index].displayText = e.target.value;
+                                    setButtons(newBtns);
+                                  }}
+                                  placeholder="e.g. Call Us"
+                                  className="w-full px-2 py-1 rounded-lg bg-slate-50 border border-slate-200 text-xs font-semibold focus:outline-none"
+                                />
+                              </div>
+                            </div>
 
-                    <div className="max-h-36 overflow-y-auto flex flex-col gap-1 border border-slate-150 rounded-xl p-2 bg-white">
-                      {contacts
-                        .filter(c => c.name?.toLowerCase().includes(searchContactQuery.toLowerCase()) || c.phone?.includes(searchContactQuery))
-                        .map((c) => {
-                          const isSelected = selectedContactIds.includes(c._id);
-                          return (
-                            <label key={c._id} className="flex items-center gap-2.5 px-2 py-1.5 rounded-lg hover:bg-slate-50 cursor-pointer text-xs font-semibold text-slate-700">
-                              <input
-                                type="checkbox"
-                                checked={isSelected}
-                                onChange={() => {
-                                  if (isSelected) {
-                                    setSelectedContactIds(selectedContactIds.filter(id => id !== c._id));
-                                  } else {
-                                    setSelectedContactIds([...selectedContactIds, c._id]);
-                                  }
-                                }}
-                                className="rounded text-indigo-650 focus:ring-indigo-500"
-                              />
-                              <span>{c.name} <span className="text-slate-400 font-medium">(+{c.phone})</span></span>
-                            </label>
-                          );
-                        })}
-                    </div>
+                            {btn.type !== 'quick_reply' && (
+                              <div>
+                                <label className="block text-[9px] font-bold text-slate-500 uppercase mb-1">
+                                  {btn.type === 'cta_url' ? 'URL (e.g. https://website.com)' : 'Phone Number (e.g. +123456789)'}
+                                </label>
+                                <input
+                                  type="text"
+                                  required
+                                  value={btn.payload}
+                                  onChange={(e) => {
+                                    const newBtns = [...buttons];
+                                    newBtns[index].payload = e.target.value;
+                                    setButtons(newBtns);
+                                  }}
+                                  placeholder={btn.type === 'cta_url' ? 'https://example.com' : '+919999999999'}
+                                  className="w-full px-2 py-1 rounded-lg bg-slate-50 border border-slate-200 text-xs font-semibold focus:outline-none"
+                                />
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
 
-              <div>
-                <label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase">Message Content (Personalization: use {"{{name}}"})</label>
-                <textarea
-                  required
-                  rows="4"
-                  value={messageText}
-                  onChange={(e) => setMessageText(e.target.value)}
-                  placeholder="Hello {{name}}, welcome to our workspace..."
-                  className="w-full px-4 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-slate-800 focus:outline-none focus:border-emerald-600 text-sm resize-none font-semibold"
-                ></textarea>
-              </div>
+                  {/* WhatsApp Live Preview Pane */}
+                  <div
+                    className="border border-slate-200 rounded-2xl bg-[#efeae2] p-4 flex flex-col gap-2 relative overflow-hidden"
+                    style={{
+                      backgroundImage: 'url(https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png)',
+                      backgroundSize: 'cover',
+                      minHeight: '200px'
+                    }}
+                  >
+                    <div className="text-[9px] font-black text-slate-500 mb-1 uppercase tracking-wider bg-white/70 backdrop-blur-xs px-2 py-0.5 rounded-md self-start">WhatsApp Live Preview</div>
+                    <div className="bg-white rounded-2xl shadow-sm p-3 max-w-[90%] text-xs flex flex-col gap-1.5 relative border border-slate-100 self-start">
+                      {mediaUrl && (
+                        <img
+                          src={mediaUrl}
+                          alt="Preview"
+                          className="rounded-lg w-full max-h-32 object-cover mb-1"
+                          onError={(e) => e.target.style.display = 'none'}
+                        />
+                      )}
+                      <div className="whitespace-pre-wrap text-slate-800 break-words leading-relaxed font-normal">
+                        {messageText || <span className="text-slate-400 italic">Enter message text to preview...</span>}
+                      </div>
+                      <div className="text-[9px] text-slate-400 text-right self-end mt-0.5">
+                        10:00 AM
+                      </div>
+                    </div>
 
-              <div>
-                <label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase">Media Image URL (Optional)</label>
-                <input
-                  type="url"
-                  value={mediaUrl}
-                  onChange={(e) => setMediaUrl(e.target.value)}
-                  placeholder="https://image-link.com/promo.png"
-                  className="w-full px-4 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-slate-800 focus:outline-none focus:border-emerald-600 text-sm font-semibold"
-                />
-              </div>
+                    {buttons.length > 0 && (
+                      <div className="flex flex-col gap-1 max-w-[90%] self-start w-full">
+                        {buttons.map((btn, index) => (
+                          <div
+                            key={index}
+                            className="w-full bg-white text-indigo-650 font-bold border border-slate-200/80 rounded-xl py-2 px-3 text-center text-xs shadow-sm flex items-center justify-center gap-1.5"
+                          >
+                            {btn.displayText || <span className="text-slate-400 italic">Button {index + 1}</span>}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
 
-              <div className="flex items-center justify-end gap-3 mt-2 border-t border-slate-100 pt-4">
-                <button
-                  type="button"
-                  onClick={() => setShowCreateModal(false)}
-                  className="px-4 py-2 rounded-xl text-slate-550 hover:bg-slate-100 text-sm font-bold cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={sessions.length === 0}
-                  className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 text-white text-sm font-black cursor-pointer shadow-md shadow-emerald-600/10"
-                >
-                  Create Campaign
-                </button>
+                <div className="flex items-center justify-end gap-3 mt-4 border-t border-slate-100 pt-4">
+                  <button
+                    type="button"
+                    onClick={() => setShowCreateModal(false)}
+                    className="px-4 py-2 rounded-xl text-slate-550 hover:bg-slate-100 text-sm font-bold cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={sessions.length === 0}
+                    className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 text-white text-sm font-black cursor-pointer shadow-md shadow-emerald-600/10"
+                  >
+                    Create Campaign
+                  </button>
+                </div>
               </div>
             </form>
           </div>

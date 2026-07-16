@@ -89,8 +89,8 @@ const LandingPage = () => {
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800 overflow-x-hidden font-sans selection:bg-indigo-100 selection:text-indigo-800">
       
-      {/* Decorative Gradients */}
-      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full max-w-7xl h-[600px] pointer-events-none opacity-40 blur-[150px] bg-gradient-to-tr from-indigo-100 via-emerald-50 to-transparent z-0"></div>
+      {/* Decorative Background */}
+      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full max-w-7xl h-[600px] pointer-events-none opacity-40 blur-[150px] bg-slate-100/50 z-0"></div>
 
       {/* Navigation */}
       <nav className="relative z-10 border-b border-slate-200/80 backdrop-blur-md bg-white/70 sticky top-0">
@@ -124,7 +124,7 @@ const LandingPage = () => {
         </div>
         <h1 className="text-5xl md:text-7xl font-extrabold tracking-tight max-w-4xl leading-tight text-slate-900">
           Automate WhatsApp Marketing & Support with{' '}
-          <span className="bg-gradient-to-r from-indigo-600 to-emerald-600 bg-clip-text text-transparent">
+          <span className="text-indigo-600">
             AI Auto-Replies
           </span>
         </h1>

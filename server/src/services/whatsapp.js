@@ -17,6 +17,37 @@ import { queryAIResponse } from './ai.js';
 export const sessions = {};
 export const connectionTimeouts = {};
 
+export const getMediaOptions = (url, caption) => {
+  if (!url) return {};
+  const lowerUrl = url.trim().toLowerCase();
+  
+  if (lowerUrl.match(/\.(jpg|jpeg|png|webp|gif)/i)) {
+    const opts = { image: { url } };
+    if (caption) opts.caption = caption;
+    return opts;
+  } else if (lowerUrl.match(/\.(mp4|3gp|m4v|mov|avi)/i)) {
+    const opts = { video: { url } };
+    if (caption) opts.caption = caption;
+    return opts;
+  } else if (lowerUrl.endsWith('.apk')) {
+    const opts = {
+      document: { url },
+      fileName: url.substring(url.lastIndexOf('/') + 1) || 'application.apk',
+      mimetype: 'application/vnd.android.package-archive'
+    };
+    if (caption) opts.caption = caption;
+    return opts;
+  } else {
+    // Default to document for other files (e.g. pdf, doc, xlsx)
+    const opts = {
+      document: { url },
+      fileName: url.substring(url.lastIndexOf('/') + 1) || 'document'
+    };
+    if (caption) opts.caption = caption;
+    return opts;
+  }
+};
+
 // LID → phone number mapping per session (populated by contacts.upsert event)
 // e.g. { '120031870476524': '919548033751' }
 const lidPhoneMap = {};
@@ -235,7 +266,41 @@ const handleIncomingMessage = async (tenantId, sessionId, sock, msg) => {
     const hasFlowBuilder = tenant && tenant.limits && tenant.limits.flowBuilder !== false;
 
     if (hasFlowBuilder) {
-      // Find active flow matching the incoming keyword
+      // 1. Check if contact is currently in a flow and awaiting interactive input
+      const contact = await Contact.findOne({ tenantId, phone });
+      if (contact) {
+        const activeState = await ContactFlowState.findOne({
+          tenantId,
+          contactId: contact._id,
+          status: 'AWAITING_INPUT'
+        });
+
+        if (activeState) {
+          const flow = await MessageFlow.findOne({ _id: activeState.flowId, tenantId, isActive: true });
+          if (flow) {
+            const currentStep = flow.steps[activeState.currentStepIndex];
+            if (currentStep && currentStep.isWaitStep) {
+              const matchedBranch = currentStep.branches?.find(branch =>
+                branch.keywords?.some(kw => normalizedText === kw.toLowerCase().trim() || normalizedText.includes(kw.toLowerCase().trim()))
+              );
+
+              if (matchedBranch) {
+                const targetIdx = flow.steps.findIndex(s => s.stepNumber === matchedBranch.targetStepNumber);
+                if (targetIdx !== -1) {
+                  activeState.currentStepIndex = targetIdx;
+                  activeState.status = 'RUNNING';
+                  activeState.nextExecutionAt = new Date();
+                  await activeState.save();
+                  console.log(`[Flow] Contact +${phone} branched to step ${matchedBranch.targetStepNumber} via input "${normalizedText}"`);
+                  return; // intercept and return
+                }
+              }
+            }
+          }
+        }
+      }
+
+      // 2. Find active flow matching the incoming keyword as a new trigger
       const matchedFlow = await MessageFlow.findOne({
         tenantId,
         isActive: true,
@@ -282,14 +347,21 @@ const handleIncomingMessage = async (tenantId, sessionId, sock, msg) => {
     }
 
     // Search for matching keyword auto-replies
+    // Sort by specificity: longest keyword first so "hello sir send me scanner" 
+    // wins over "hello sir" when both CONTAINS rules exist.
     const rules = await AutoReply.find({ tenantId, isActive: true });
+    const sortedRules = rules.slice().sort((a, b) => {
+      const maxLenA = Math.max(...a.keywords.map(k => k.length));
+      const maxLenB = Math.max(...b.keywords.map(k => k.length));
+      return maxLenB - maxLenA; // longer = more specific = higher priority
+    });
     
-    for (const rule of rules) {
+    for (const rule of sortedRules) {
       let matched = false;
       
       for (const keyword of rule.keywords) {
         const kw = keyword.toLowerCase().trim();
-        const incomingText = text.toLowerCase();
+        const incomingText = text.toLowerCase().trim();
         
         if (rule.matchType === 'EXACT' && incomingText === kw) {
           matched = true;
@@ -302,10 +374,12 @@ const handleIncomingMessage = async (tenantId, sessionId, sock, msg) => {
 
       if (matched) {
         if (rule.replyMode === 'STATIC') {
-          // Send static text response
-          const messageOptions = { text: rule.replyText };
+          // Send static response (handles image, video, document, apk, or fallback text)
+          let messageOptions = {};
           if (rule.mediaUrl) {
-            messageOptions.image = { url: rule.mediaUrl };
+            messageOptions = getMediaOptions(rule.mediaUrl, rule.replyText);
+          } else {
+            messageOptions = { text: rule.replyText };
           }
           const sentMsg = await sock.sendMessage(jid, messageOptions);
           const savedLog = await MessageLog.create({
@@ -398,6 +472,28 @@ export const connectToWhatsApp = async (tenantId, sessionId) => {
     version,
     printQRInTerminal: false,
     mobile: false,
+    patchMessageBeforeSending: (message) => {
+      const requiresPatch = !!(
+        message.buttonsMessage || 
+        message.templateMessage ||
+        message.listMessage ||
+        message.interactiveMessage
+      );
+      if (requiresPatch) {
+        message = {
+          viewOnceMessage: {
+            message: {
+              messageContextInfo: {
+                deviceListMetadataVersion: 2,
+                deviceListMetadata: {},
+              },
+              ...message
+            }
+          }
+        };
+      }
+      return message;
+    }
   });
 
   sessions[sessionKey] = sock;

@@ -5,6 +5,9 @@ import MessageLog from '../models/MessageLog.js';
 import Plan from '../models/Plan.js';
 import Contact from '../models/Contact.js';
 import AuditLog from '../models/AuditLog.js';
+import SystemSettings from '../models/SystemSettings.js';
+import Coupon from '../models/Coupon.js';
+import Transaction from '../models/Transaction.js';
 import { writeAuditLog } from '../services/audit.js';
 
 const isStrongPassword = (password) => {
@@ -660,6 +663,167 @@ export const getTenantUsage = async (req, res, next) => {
         contactsCount,
         sentToday,
         sentThisMonth
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getSystemSettings = async (req, res, next) => {
+  try {
+    const settings = await SystemSettings.getOrCreate();
+    res.json(settings);
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const updateSystemSettings = async (req, res, next) => {
+  try {
+    const settings = await SystemSettings.getOrCreate();
+    
+    const fields = [
+      'smtpHost', 'smtpPort', 'smtpSecure', 'smtpUser', 'smtpPass', 'smtpFrom',
+      'gatewayMaxRetries', 'gatewayDelayMin', 'gatewayDelayMax',
+      'openaiKey', 'openaiModel',
+      'siteTitle', 'supportEmail', 'logoUrl', 'enableWhiteLabeling'
+    ];
+
+    fields.forEach(field => {
+      if (req.body[field] !== undefined) {
+        settings[field] = req.body[field];
+      }
+    });
+
+    await settings.save();
+    
+    await writeAuditLog(req, {
+      action: 'SYSTEM_SETTINGS_UPDATED',
+      entityType: 'SystemSettings',
+      entityId: settings._id,
+      metadata: { fieldsUpdated: Object.keys(req.body) }
+    });
+
+    res.json(settings);
+  } catch (error) {
+    next(error);
+  }
+};
+
+// Coupons CRUD for Admin
+export const getCoupons = async (req, res, next) => {
+  try {
+    const coupons = await Coupon.find().sort({ createdAt: -1 });
+    res.json(coupons);
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const createCoupon = async (req, res, next) => {
+  try {
+    const { code, discountType, discountValue, maxUses, expiresAt } = req.body;
+    if (!code || !discountType || discountValue === undefined || !expiresAt) {
+      return res.status(400).json({ message: 'All coupon fields are required.' });
+    }
+
+    const uppercaseCode = code.toUpperCase();
+    const existing = await Coupon.findOne({ code: uppercaseCode });
+    if (existing) {
+      return res.status(400).json({ message: 'A coupon with this code already exists.' });
+    }
+
+    const coupon = await Coupon.create({
+      code: uppercaseCode,
+      discountType,
+      discountValue,
+      maxUses: maxUses || 100,
+      expiresAt: new Date(expiresAt),
+      active: true
+    });
+
+    await writeAuditLog(req, {
+      action: 'COUPON_CREATED',
+      entityType: 'Coupon',
+      entityId: coupon._id,
+      metadata: { code: coupon.code, discountValue: coupon.discountValue }
+    });
+
+    res.status(201).json(coupon);
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const deleteCoupon = async (req, res, next) => {
+  try {
+    const coupon = await Coupon.findByIdAndDelete(req.params.id);
+    if (!coupon) {
+      return res.status(404).json({ message: 'Coupon not found.' });
+    }
+
+    await writeAuditLog(req, {
+      action: 'COUPON_DELETED',
+      entityType: 'Coupon',
+      entityId: coupon._id,
+      metadata: { code: coupon.code }
+    });
+
+    res.json({ message: 'Coupon deleted successfully.' });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// System Transactions view for Admin
+export const getTransactions = async (req, res, next) => {
+  try {
+    const transactions = await Transaction.find()
+      .populate('tenantId', 'name')
+      .sort({ createdAt: -1 });
+    res.json(transactions);
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const impersonateTenant = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    
+    // Find the first Admin user of that tenant
+    const adminUser = await User.findOne({ tenantId: id, role: 'Admin' });
+    if (!adminUser) {
+      return res.status(404).json({ message: 'No administrator user found for this tenant.' });
+    }
+
+    // Generate tokens for this user
+    const { generateAccessToken, generateRefreshToken } = await import('../middleware/auth.js');
+    const accessToken = generateAccessToken(adminUser);
+    const refreshToken = generateRefreshToken(adminUser);
+
+    adminUser.refreshToken = refreshToken;
+    await adminUser.save();
+
+    res.cookie('refreshToken', refreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    });
+
+    res.json({
+      message: 'Impersonation successful.',
+      accessToken,
+      user: {
+        id: adminUser._id,
+        name: adminUser.name,
+        email: adminUser.email,
+        role: adminUser.role,
+        tenantId: adminUser.tenantId,
+        permissions: adminUser.permissions,
+        isImpersonated: true
       }
     });
   } catch (error) {

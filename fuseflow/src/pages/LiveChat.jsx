@@ -17,14 +17,19 @@ import {
   Plus,
   X,
   Sliders,
-  ChevronRight,
-  Info,
   ChevronDown,
   ChevronUp,
-  Settings,
-  HelpCircle,
   PlusCircle,
-  MessageSquare
+  MessageSquare,
+  Star,
+  Pin,
+  Archive,
+  BellOff,
+  Smile,
+  Mic,
+  MoreVertical,
+  Inbox,
+  FileText
 } from 'lucide-react';
 
 const LiveChat = () => {
@@ -40,20 +45,38 @@ const LiveChat = () => {
   const [newMessage, setNewMessage] = useState('');
   const [mediaUrl, setMediaUrl] = useState('');
   const [showMediaInput, setShowMediaInput] = useState(false);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const commonEmojis = [
+    "😀", "😂", "😍", "🤔", "😢", "👍", "❤️", "🎉", "🔥", "👏", "😎", "🤗", "😴", "😱", "🙏", "👍🏻", "👏🏻", "😂", "🔥", "❤️"
+  ];
   const [loadingChats, setLoadingChats] = useState(false);
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
+  const [activeTab, setActiveTab] = useState('active'); // 'active' or 'archived'
 
   // UI Control States
   const [showCrmPanel, setShowCrmPanel] = useState(true);
-  const [showVariablesSection, setShowVariablesSection] = useState(false); // Collapsed by default, making it completely optional
+  const [showVariablesSection, setShowVariablesSection] = useState(false);
+  const [showInternalNotesSection, setShowInternalNotesSection] = useState(true);
+  const [showNotesSection, setShowNotesSection] = useState(true);
 
   // Contact Details Panel States
   const [contactDetails, setContactDetails] = useState(null);
   const [newTag, setNewTag] = useState('');
   const [newVarKey, setNewVarKey] = useState('');
   const [newVarValue, setNewVarValue] = useState('');
+  const [newInternalNote, setNewInternalNote] = useState('');
+  const [newNote, setNewNote] = useState('');
+  const [quickReplies, setQuickReplies] = useState([
+    'Hey there! How can I help you?',
+    'Thank you for reaching out!',
+    'Can you please share more details?',
+    'We will get back to you shortly.',
+    'Sure! Let me check that for you.'
+  ]);
+  const [isTyping, setIsTyping] = useState(false);
+  const [typingTimeout, setTypingTimeout] = useState(null);
 
   const messagesEndRef = useRef(null);
   const socketRef = useRef(null);
@@ -65,17 +88,10 @@ const LiveChat = () => {
     return name;
   };
 
-  // Generate dynamic gradient for avatars based on contact name
-  const getAvatarGradient = (str) => {
+  const getAvatarColor = (str) => {
     const sum = str.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
-    const gradients = [
-      'from-indigo-500 to-purple-500',
-      'from-emerald-400 to-teal-500',
-      'from-rose-500 to-pink-500',
-      'from-blue-500 to-sky-500',
-      'from-amber-400 to-orange-500'
-    ];
-    return gradients[sum % gradients.length];
+    const colors = ['#4338ca','#059669','#b45309','#7c3aed','#0369a1'];
+    return colors[sum % colors.length];
   };
 
   const scrollToBottom = () => {
@@ -86,11 +102,12 @@ const LiveChat = () => {
     scrollToBottom();
   }, [messages]);
 
-  // Fetch recent active chats
   const fetchChats = async () => {
     setLoadingChats(true);
     try {
-      const { data } = await api.get('/chat/contacts');
+      const { data } = await api.get('/chat/contacts', {
+        params: { includeArchived: activeTab === 'archived' ? 'true' : 'false' }
+      });
       setChats(data);
     } catch (err) {
       setError('Failed to load active chats.');
@@ -99,7 +116,10 @@ const LiveChat = () => {
     }
   };
 
-  // Fetch message history for selected contact
+  useEffect(() => {
+    fetchChats();
+  }, [activeTab]);
+
   const fetchMessages = async (phone) => {
     setLoadingMessages(true);
     try {
@@ -112,7 +132,6 @@ const LiveChat = () => {
     }
   };
 
-  // Fetch contact details for the side CRM panel
   const fetchContactDetails = async (phone) => {
     try {
       const { data } = await api.get(`/contacts`, { params: { search: phone } });
@@ -125,7 +144,19 @@ const LiveChat = () => {
           name: 'Unknown Contact',
           stage: 'lead',
           tags: [],
-          variables: {}
+          variables: {},
+          isPinned: false,
+          isArchived: false,
+          isMuted: false,
+          mutedUntil: null,
+          assignedAgentId: null,
+          notes: [],
+          internalNotes: [],
+          customFields: {},
+          customerScore: 0,
+          leadScore: 0,
+          birthday: null,
+          anniversary: null
         });
       }
     } catch (err) {
@@ -133,11 +164,9 @@ const LiveChat = () => {
     }
   };
 
-  // Initialize socket connection and data fetching
   useEffect(() => {
     fetchChats();
 
-    // Setup Socket
     const socket = io('http://localhost:5000', {
       auth: { token: localStorage.getItem('accessToken') },
       reconnection: true,
@@ -148,13 +177,11 @@ const LiveChat = () => {
 
     socket.emit('join-tenant', user.tenantId);
 
-    // Re-join tenant room and refresh chats after reconnect (server restart etc.)
     socket.on('connect', () => {
       socket.emit('join-tenant', user.tenantId);
       fetchChats();
     });
 
-    // Listen to real-time chat messages
     socket.on('chat-message', (data) => {
       setSelectedChat((currentChat) => {
         if (currentChat && currentChat.phone === data.phone) {
@@ -167,7 +194,6 @@ const LiveChat = () => {
         return currentChat;
       });
 
-      // Update recent chats list in sidebar
       setChats((prevChats) => {
         const existingIdx = prevChats.findIndex((c) => c.phone === data.phone);
         if (existingIdx !== -1) {
@@ -188,12 +214,23 @@ const LiveChat = () => {
       });
     });
 
+    socket.on('typing-start', (data) => {
+      if (selectedChat && selectedChat.phone === data.phone) {
+        setIsTyping(true);
+      }
+    });
+
+    socket.on('typing-stop', (data) => {
+      if (selectedChat && selectedChat.phone === data.phone) {
+        setIsTyping(false);
+      }
+    });
+
     return () => {
       socket.disconnect();
     };
-  }, [user.tenantId]);
+  }, [user.tenantId, activeTab, selectedChat]);
 
-  // Handle auto-selecting contact from URL parameters (e.g. from CRM contacts page)
   useEffect(() => {
     if (phoneParam && chats.length > 0) {
       const existingChat = chats.find(c => c.phone === phoneParam);
@@ -211,6 +248,9 @@ const LiveChat = () => {
               lastMessage: '',
               lastMessageAt: new Date().toISOString(),
               lastDirection: 'OUTGOING',
+              isPinned: false,
+              isArchived: false,
+              isMuted: false
             };
             setChats(prev => [newChat, ...prev]);
             handleSelectChat(newChat);
@@ -224,6 +264,9 @@ const LiveChat = () => {
               lastMessage: '',
               lastMessageAt: new Date().toISOString(),
               lastDirection: 'OUTGOING',
+              isPinned: false,
+              isArchived: false,
+              isMuted: false
             };
             setChats(prev => [newChat, ...prev]);
             handleSelectChat(newChat);
@@ -234,7 +277,6 @@ const LiveChat = () => {
     }
   }, [phoneParam, chats]);
 
-  // Handle clicking a contact chat
   const handleSelectChat = (chat) => {
     setSelectedChat(chat);
     setMessages([]);
@@ -243,7 +285,11 @@ const LiveChat = () => {
     fetchContactDetails(chat.phone);
   };
 
-  // Send message manual handler
+  const handleEmojiClick = (emoji) => {
+    setNewMessage(prev => prev + emoji);
+    setShowEmojiPicker(false);
+  };
+  
   const handleSendMessage = async (e) => {
     e.preventDefault();
     if (!newMessage.trim() || sending || !selectedChat) return;
@@ -287,6 +333,7 @@ const LiveChat = () => {
       setNewMessage('');
       setMediaUrl('');
       setShowMediaInput(false);
+      handleTypingStop();
     } catch (err) {
       setError(err.response?.data?.message || 'Failed to send message.');
     } finally {
@@ -294,7 +341,6 @@ const LiveChat = () => {
     }
   };
 
-  // CRM Update: Stage
   const handleUpdateStage = async (stage) => {
     if (!contactDetails?.phone) return;
     const identifier = contactDetails._id || contactDetails.phone;
@@ -307,7 +353,6 @@ const LiveChat = () => {
     }
   };
 
-  // CRM Update: Add Tag
   const handleAddTag = async (e) => {
     e.preventDefault();
     if (!newTag.trim() || !contactDetails?.phone) return;
@@ -323,7 +368,6 @@ const LiveChat = () => {
     }
   };
 
-  // CRM Update: Remove Tag
   const handleRemoveTag = async (tagToRemove) => {
     if (!contactDetails?.phone) return;
     const identifier = contactDetails._id || contactDetails.phone;
@@ -336,7 +380,6 @@ const LiveChat = () => {
     }
   };
 
-  // CRM Update: Add Variable
   const handleAddVariable = async (e) => {
     e.preventDefault();
     if (!newVarKey.trim() || !newVarValue.trim() || !contactDetails?.phone) return;
@@ -355,7 +398,6 @@ const LiveChat = () => {
     }
   };
 
-  // CRM Update: Remove Variable
   const handleRemoveVariable = async (keyToRemove) => {
     if (!contactDetails?.phone) return;
     const identifier = contactDetails._id || contactDetails.phone;
@@ -370,7 +412,127 @@ const LiveChat = () => {
     }
   };
 
-  // Filtered sidebar chats
+  const handleTogglePin = async () => {
+    if (!contactDetails?.phone) return;
+    const identifier = contactDetails._id || contactDetails.phone;
+    try {
+      const { data } = await api.put(`/contacts/${identifier}`, { isPinned: !contactDetails.isPinned });
+      setContactDetails(data);
+      setChats(prev => prev.map(c => c.phone === data.phone ? { ...c, isPinned: data.isPinned } : c));
+      setSelectedChat(prev => prev ? { ...prev, isPinned: data.isPinned } : prev);
+    } catch (err) {
+      alert('Failed to update pin status');
+    }
+  };
+
+  const handleToggleArchive = async () => {
+    if (!contactDetails?.phone) return;
+    const identifier = contactDetails._id || contactDetails.phone;
+    try {
+      const { data } = await api.put(`/contacts/${identifier}`, { isArchived: !contactDetails.isArchived });
+      setContactDetails(data);
+      setChats(prev => prev.filter(c => c.phone !== data.phone));
+      setSelectedChat(null);
+    } catch (err) {
+      alert('Failed to update archive status');
+    }
+  };
+
+  const handleToggleMute = async () => {
+    if (!contactDetails?.phone) return;
+    const identifier = contactDetails._id || contactDetails.phone;
+    try {
+      const { data } = await api.put(`/contacts/${identifier}`, { isMuted: !contactDetails.isMuted });
+      setContactDetails(data);
+      setChats(prev => prev.map(c => c.phone === data.phone ? { ...c, isMuted: data.isMuted } : c));
+      setSelectedChat(prev => prev ? { ...prev, isMuted: data.isMuted } : prev);
+    } catch (err) {
+      alert('Failed to update mute status');
+    }
+  };
+
+  const handleAddInternalNote = async (e) => {
+    e.preventDefault();
+    if (!newInternalNote.trim() || !contactDetails?.phone) return;
+    const identifier = contactDetails._id || contactDetails.phone;
+    const newNoteObj = {
+      text: newInternalNote,
+      authorId: user._id,
+      createdAt: new Date().toISOString()
+    };
+    const updatedNotes = [...(contactDetails.internalNotes || []), newNoteObj];
+    try {
+      const { data } = await api.put(`/contacts/${identifier}`, { internalNotes: updatedNotes });
+      setContactDetails(data);
+      setNewInternalNote('');
+    } catch (err) {
+      alert('Failed to add internal note');
+    }
+  };
+
+  const handleAddNote = async (e) => {
+    e.preventDefault();
+    if (!newNote.trim() || !contactDetails?.phone) return;
+    const identifier = contactDetails._id || contactDetails.phone;
+    const newNoteObj = {
+      text: newNote,
+      authorId: user._id,
+      createdAt: new Date().toISOString()
+    };
+    const updatedNotes = [...(contactDetails.notes || []), newNoteObj];
+    try {
+      const { data } = await api.put(`/contacts/${identifier}`, { notes: updatedNotes });
+      setContactDetails(data);
+      setNewNote('');
+    } catch (err) {
+      alert('Failed to add note');
+    }
+  };
+
+  const handleToggleStarMessage = async (messageId, currentStarred) => {
+    try {
+      const { data } = await api.put(`/chat/message/${messageId}/star`, { starred: !currentStarred });
+      setMessages(prev => prev.map(m => m._id === messageId ? data : m));
+    } catch (err) {
+      alert('Failed to update message star status');
+    }
+  };
+
+  const handleTypingStart = () => {
+    if (!selectedChat || !socketRef.current) return;
+    socketRef.current.emit('typing-start', { tenantId: user.tenantId, phone: selectedChat.phone });
+    
+    if (typingTimeout) {
+      clearTimeout(typingTimeout);
+    }
+    
+    const timeout = setTimeout(() => {
+      handleTypingStop();
+    }, 2000);
+    setTypingTimeout(timeout);
+  };
+
+  const handleTypingStop = () => {
+    if (!selectedChat || !socketRef.current) return;
+    socketRef.current.emit('typing-stop', { tenantId: user.tenantId, phone: selectedChat.phone });
+    if (typingTimeout) {
+      clearTimeout(typingTimeout);
+      setTypingTimeout(null);
+    }
+  };
+
+  const handleUpdateContact = async (fields) => {
+    if (!contactDetails?.phone) return;
+    const identifier = contactDetails._id || contactDetails.phone;
+    try {
+      const { data } = await api.put(`/contacts/${identifier}`, fields);
+      setContactDetails(data);
+    } catch (err) {
+      console.error('Failed to update contact:', err);
+    }
+  };
+
+
   const filteredChats = chats.filter((c) => {
     const matchesSearch =
       !searchQuery ||
@@ -398,431 +560,376 @@ const LiveChat = () => {
     }
   };
 
+  const S = {
+    panel: { backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)' },
+    header: { backgroundColor: 'var(--bg-header)', borderColor: 'var(--border)' },
+    input: { backgroundColor: 'var(--bg-input)', borderColor: 'var(--border)', color: 'var(--text-primary)' },
+    base: { backgroundColor: 'var(--bg-base)' },
+    text: { color: 'var(--text-primary)' },
+    sub: { color: 'var(--text-secondary)' },
+    muted: { color: 'var(--text-muted)' },
+    border: { borderColor: 'var(--border)' },
+    accent: { backgroundColor: 'var(--accent-soft)', color: 'var(--accent-text)' },
+    msgOut: { backgroundColor: '#25a244', color: '#ffffff' },
+    msgIn: { backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)', color: 'var(--text-primary)' },
+  };
+
   return (
-    <div className="flex h-[calc(100vh-73px)] -mx-4 -my-6 sm:-mx-6 lg:-mx-8 lg:-my-8 gap-4 bg-slate-100/30 p-4">
-      {/* 1. Chats Sidebar (Left) */}
-      <div className="w-80 shrink-0 bg-white border border-slate-200/80 rounded-3xl flex flex-col overflow-hidden shadow-sm">
-        {/* Search & Filters */}
-        <div className="p-4 border-b border-slate-100 flex flex-col gap-3">
-          <h2 className="font-extrabold text-slate-800 text-lg tracking-tight">Active Conversations</h2>
-          <div className="relative">
-            <Search className="absolute left-3 top-3.5 text-slate-400" size={15} />
-            <input
-              type="text"
-              placeholder="Search chat or number..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-4 py-2.5 rounded-2xl bg-slate-50 hover:bg-slate-100/70 border border-slate-200 text-xs focus:outline-none focus:border-indigo-650 transition-colors font-semibold placeholder-slate-400"
-            />
+    <div className="flex h-[calc(100vh-73px)] -mx-4 -my-6 sm:-mx-6 lg:-mx-8 lg:-my-8" style={S.base}>
+      {/* LEFT: Conversations Sidebar */}
+      <div className="w-[300px] shrink-0 border-r flex flex-col overflow-hidden" style={S.panel}>
+        {/* Header */}
+        <div className="px-4 pt-4 pb-3 border-b" style={S.border}>
+          <h2 className="font-extrabold text-base mb-3" style={S.text}>Chats</h2>
+          <div className="flex gap-1 p-1 rounded-xl border mb-3" style={{ ...S.border, backgroundColor: 'var(--bg-input)' }}>
+            {['active','archived'].map(tab => (
+              <button key={tab} onClick={() => setActiveTab(tab)}
+                className="flex-1 py-1.5 rounded-lg text-xs font-bold capitalize transition-all"
+                style={activeTab === tab ? { backgroundColor: 'var(--accent)', color: '#fff' } : S.sub}>
+                {tab === 'active' ? <><Inbox size={12} className="inline mr-1"/>Active</> : <><Archive size={12} className="inline mr-1"/>Archived</>}
+              </button>
+            ))}
+          </div>
+          <div className="relative mb-2">
+            <Search className="absolute left-3 top-2.5" size={14} style={S.muted}/>
+            <input type="text" placeholder="Search..." value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              className="w-full pl-9 pr-3 py-2 rounded-xl text-xs font-semibold focus:outline-none border"
+              style={S.input}/>
           </div>
           <div className="flex gap-2">
-            <select
-              value={filterStage}
-              onChange={(e) => setFilterStage(e.target.value)}
-              className="flex-1 px-2.5 py-2 rounded-xl bg-slate-50 border border-slate-200 text-[10px] font-black text-slate-500 uppercase tracking-wide focus:outline-none focus:border-indigo-650 cursor-pointer"
-            >
+            <select value={filterStage} onChange={e => setFilterStage(e.target.value)}
+              className="flex-1 px-2 py-1.5 rounded-lg text-[10px] font-bold uppercase focus:outline-none border"
+              style={S.input}>
               <option value="">All Stages</option>
-              <option value="lead">Lead</option>
-              <option value="contact">Contact</option>
-              <option value="demo">Demo</option>
-              <option value="negotiation">Negotiation</option>
-              <option value="won">Won</option>
-              <option value="lost">Lost</option>
+              {['lead','contact','demo','negotiation','won','lost'].map(s=><option key={s} value={s}>{s}</option>)}
             </select>
-            <input
-              type="text"
-              placeholder="Filter tag..."
-              value={filterTag}
-              onChange={(e) => setFilterTag(e.target.value)}
-              className="flex-1 px-2.5 py-2 rounded-xl bg-slate-50 border border-slate-200 text-[11px] font-semibold text-slate-700 placeholder-slate-400 focus:outline-none focus:border-indigo-650"
-            />
+            <input type="text" placeholder="Tag filter..." value={filterTag}
+              onChange={e => setFilterTag(e.target.value)}
+              className="flex-1 px-2 py-1.5 rounded-lg text-xs focus:outline-none border"
+              style={S.input}/>
           </div>
         </div>
-
-        {/* Chats List */}
-        <div className="flex-1 overflow-y-auto divide-y divide-slate-50">
+        {/* Chat List */}
+        <div className="flex-1 overflow-y-auto">
           {loadingChats ? (
-            <div className="flex justify-center items-center py-10">
-              <div className="h-6 w-6 animate-spin rounded-full border-2 border-indigo-600 border-t-transparent"></div>
-            </div>
+            <div className="flex justify-center py-10"><div className="h-5 w-5 animate-spin rounded-full border-2 border-indigo-500 border-t-transparent"/></div>
           ) : filteredChats.length === 0 ? (
-            <div className="p-6 text-center text-slate-400 text-xs font-bold leading-relaxed">
-              No conversations active matching criteria.
+            <div className="p-8 text-center text-xs font-bold" style={S.muted}>
+              <MessageSquare size={36} className="mx-auto mb-3 opacity-30"/>No conversations
             </div>
-          ) : (
-            filteredChats.map((c) => {
-              const isSelected = selectedChat && selectedChat.phone === c.phone;
-              const displayName = getDisplayName(c.name, c.phone);
-              const initials = displayName.replace('+', '').slice(0, 2).toUpperCase();
-              
-              return (
-                <button
-                  key={c.phone}
-                  onClick={() => handleSelectChat(c)}
-                  className={`w-full flex items-start gap-3.5 p-4 transition-all text-left ${
-                    isSelected ? 'bg-indigo-50/70 border-l-4 border-l-indigo-600' : 'hover:bg-slate-50/60 border-l-4 border-l-transparent'
-                  }`}
-                >
-                  <div className={`h-10 w-10 shrink-0 rounded-2xl bg-gradient-to-br ${getAvatarGradient(displayName)} text-white font-black text-xs flex items-center justify-center shadow-sm`}>
-                    {initials}
+          ) : filteredChats.map(c => {
+            const isSelected = selectedChat?.phone === c.phone;
+            const name = getDisplayName(c.name, c.phone);
+            const initials = name.replace('+','').slice(0,2).toUpperCase();
+            return (
+              <button key={c.phone} onClick={() => handleSelectChat(c)}
+                className="w-full flex items-start gap-3 px-4 py-3.5 text-left border-b transition-colors relative"
+                style={{ borderColor: 'var(--border)', backgroundColor: isSelected ? 'var(--accent-soft)' : 'transparent' }}>
+                {c.isPinned && <Pin size={10} className="absolute top-2 right-2 text-amber-500"/>}
+                <div className="h-10 w-10 shrink-0 rounded-full flex items-center justify-center text-white font-black text-xs"
+                  style={{ backgroundColor: getAvatarColor(name) }}>{initials}</div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex justify-between items-center">
+                    <span className="font-bold text-sm truncate" style={S.text}>{name}{c.isMuted && <BellOff size={10} className="inline ml-1 opacity-50"/>}</span>
+                    <span className="text-[10px] shrink-0 ml-1" style={S.muted}>{c.lastMessageAt ? new Date(c.lastMessageAt).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}) : ''}</span>
                   </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex justify-between items-center">
-                      <span className="font-extrabold text-slate-800 text-sm truncate">{displayName}</span>
-                      <span className="text-[9px] text-slate-400 font-bold shrink-0">
-                        {c.lastMessageAt ? new Date(c.lastMessageAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
-                      </span>
-                    </div>
-                    <p className="text-xs text-slate-500 truncate mt-1 font-semibold leading-snug">
-                      {c.lastDirection === 'INCOMING' ? '← ' : '→ '}
-                      {c.lastMessage || 'Media / attachments'}
-                    </p>
-                    <div className="flex items-center gap-1.5 mt-2">
-                      <span className={`px-1.5 py-0.5 rounded text-[8px] font-black uppercase border ${getStageBadgeStyle(c.stage)}`}>
-                        {c.stage}
-                      </span>
-                      {displayName !== `+${c.phone}` && (
-                        <span className="text-[9px] text-slate-450 font-bold tracking-tight">+{c.phone}</span>
-                      )}
-                    </div>
-                  </div>
-                </button>
-              );
-            })
-          )}
+                  <p className="text-xs truncate mt-0.5" style={S.muted}>{c.lastDirection==='INCOMING'?'← ':'→ '}{c.lastMessage||'Media'}</p>
+                  <span className="inline-block mt-1 px-1.5 py-0.5 rounded text-[8px] font-black uppercase border" style={S.border}>{c.stage||'lead'}</span>
+                </div>
+              </button>
+            );
+          })}
         </div>
       </div>
 
-      {/* 2. Chat Window (Center) */}
-      <div className="flex-1 bg-white border border-slate-200/80 rounded-3xl flex flex-col overflow-hidden shadow-sm">
-        {selectedChat ? (
-          <>
-            {/* Active Chat Header */}
-            <div className="px-6 py-4 border-b border-slate-150 flex items-center justify-between bg-slate-50/40">
-              <div className="flex items-center gap-3">
-                <div className={`h-10 w-10 rounded-2xl bg-gradient-to-br ${getAvatarGradient(getDisplayName(selectedChat.name, selectedChat.phone))} text-white font-black text-xs flex items-center justify-center shadow-sm`}>
-                  {getDisplayName(selectedChat.name, selectedChat.phone).replace('+', '').slice(0, 2).toUpperCase()}
-                </div>
-                <div>
-                  <div className="flex items-center gap-1.5">
-                    <h3 className="font-extrabold text-slate-900 text-sm tracking-tight">{getDisplayName(selectedChat.name, selectedChat.phone)}</h3>
-                    <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" title="Active connection" />
-                  </div>
-                  {getDisplayName(selectedChat.name, selectedChat.phone) !== `+${selectedChat.phone}` && (
-                    <p className="text-[10px] text-slate-400 mt-0.5 font-bold">+{selectedChat.phone}</p>
-                  )}
-                </div>
+      {/* CENTER: Chat Window */}
+      <div className="flex-1 flex flex-col overflow-hidden relative">
+        {selectedChat ? (<>
+          {/* Chat Header */}
+          <div className="px-5 py-3 border-b flex items-center justify-between" style={S.header}>
+            <div className="flex items-center gap-3">
+              <div className="h-9 w-9 rounded-full flex items-center justify-center text-white font-black text-xs"
+                style={{ backgroundColor: getAvatarColor(getDisplayName(selectedChat.name, selectedChat.phone)) }}>
+                {getDisplayName(selectedChat.name, selectedChat.phone).replace('+','').slice(0,2).toUpperCase()}
               </div>
-              
-              <div className="flex items-center gap-2">
-                {error && (
-                  <div className="px-3 py-1.5 rounded-xl border border-red-200 bg-red-50 text-red-600 text-[10px] font-black flex items-center gap-1.5">
-                    <AlertCircle size={12} /> {error}
-                  </div>
+              <div>
+                <div className="flex items-center gap-1.5">
+                  <h3 className="font-bold text-sm" style={S.text}>{getDisplayName(selectedChat.name, selectedChat.phone)}</h3>
+                  <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse"/>
+                  {selectedChat.isPinned && <Pin size={12} className="text-amber-500"/>}
+                </div>
+                {getDisplayName(selectedChat.name,selectedChat.phone) !== `+${selectedChat.phone}` && (
+                  <p className="text-[10px] font-bold" style={S.muted}>+{selectedChat.phone}</p>
                 )}
-                <button
-                  onClick={() => setShowCrmPanel(!showCrmPanel)}
-                  className={`p-2 rounded-xl border transition-all flex items-center justify-center cursor-pointer ${
-                    showCrmPanel
-                      ? 'bg-indigo-50 border-indigo-200 text-indigo-650'
-                      : 'border-slate-200 text-slate-400 hover:text-slate-700 hover:bg-slate-50'
-                  }`}
-                  title={showCrmPanel ? 'Hide CRM details' : 'Show CRM details'}
-                >
-                  <Info size={16} className="stroke-[2.2]" />
-                </button>
               </div>
             </div>
+            <div className="flex items-center gap-1">
+              {error && <span className="text-[10px] text-red-400 mr-2 flex items-center gap-1"><AlertCircle size={12}/>{error}</span>}
+              {[
+                {fn: handleTogglePin, icon: Pin, active: contactDetails?.isPinned, title: 'Pin'},
+                {fn: handleToggleArchive, icon: Archive, active: false, title: 'Archive'},
+                {fn: handleToggleMute, icon: BellOff, active: contactDetails?.isMuted, title: 'Mute'},
+                {fn: () => setShowCrmPanel(v=>!v), icon: User, active: showCrmPanel, title: 'CRM Panel'},
+              ].map(({fn, icon: Icon, active, title}) => (
+                <button key={title} onClick={fn} title={title}
+                  className="p-2 rounded-lg border transition-colors cursor-pointer"
+                  style={active ? S.accent : { ...S.border, ...S.sub, backgroundColor: 'transparent' }}>
+                  <Icon size={16}/>
+                </button>
+              ))}
+            </div>
+          </div>
 
-            {/* Message Pane */}
-            <div className="flex-1 overflow-y-auto p-6 bg-slate-50/15 flex flex-col gap-4">
-              {loadingMessages ? (
-                <div className="flex justify-center items-center h-full">
-                  <div className="h-8 w-8 animate-spin rounded-full border-3 border-indigo-600 border-t-transparent"></div>
-                </div>
-              ) : messages.length === 0 ? (
-                <div className="text-center text-slate-400 text-xs py-12 font-bold">
-                  No log messages found. Type below to send a WhatsApp message.
-                </div>
-              ) : (
-                messages.map((msg, index) => {
-                  const isIncoming = msg.direction === 'INCOMING';
-                  return (
-                    <div
-                      key={msg._id || index}
-                      className={`flex ${isIncoming ? 'justify-start' : 'justify-end'}`}
-                    >
-                      <div
-                        className={`max-w-md rounded-2xl px-4 py-3 shadow-sm text-xs ${
-                          isIncoming
-                            ? 'bg-white border border-slate-200 text-slate-800 rounded-tl-none'
-                            : 'bg-gradient-to-tr from-indigo-600 to-indigo-700 text-white rounded-tr-none'
-                        }`}
-                      >
-                        {msg.mediaUrl && (
-                          <img
-                            src={msg.mediaUrl}
-                            alt="Sent attachment"
-                            className="rounded-xl mb-2.5 max-w-xs object-cover border border-slate-100 shadow-sm"
-                          />
-                        )}
-                        <p className="font-semibold whitespace-pre-wrap leading-relaxed">{msg.messageText}</p>
-                        <div
-                          className={`flex items-center justify-end gap-1 mt-1.5 text-[9px] font-bold ${
-                            isIncoming ? 'text-slate-400' : 'text-indigo-200'
-                          }`}
-                        >
-                          <span>
-                            {new Date(msg.createdAt).toLocaleTimeString([], {
-                              hour: '2-digit',
-                              minute: '2-digit',
-                            })}
-                          </span>
-                          {!isIncoming && (
-                            <CheckCheck size={11} className={msg.status === 'READ' ? 'text-emerald-400' : ''} />
-                          )}
-                        </div>
-                      </div>
+          {/* Messages Area — WhatsApp chat background */}
+          <div className="flex-1 overflow-y-auto px-5 py-4 flex flex-col gap-3"
+            style={{ backgroundColor: 'var(--bg-base)' }}>
+            {loadingMessages ? (
+              <div className="flex justify-center items-center h-full">
+                <div className="h-7 w-7 animate-spin rounded-full border-2 border-indigo-500 border-t-transparent"/>
+              </div>
+            ) : messages.length === 0 ? (
+              <div className="flex-1 flex flex-col items-center justify-center text-center py-16">
+                <MessageSquare size={44} className="mb-4 opacity-20" style={S.muted}/>
+                <p className="text-sm font-bold" style={S.muted}>No messages yet</p>
+              </div>
+            ) : messages.map((msg, idx) => {
+              const isIn = msg.direction === 'INCOMING';
+              return (
+                <div key={msg._id||idx} className={`flex ${isIn ? 'justify-start' : 'justify-end'}`}>
+                  <div className={`max-w-[70%] rounded-2xl px-3.5 py-2.5 text-xs border ${isIn ? 'rounded-tl-sm' : 'rounded-tr-sm border-transparent'}`}
+                    style={isIn ? S.msgIn : S.msgOut}>
+                    {msg.mediaUrl && <img src={msg.mediaUrl} alt="media" className="rounded-lg mb-2 max-w-xs object-cover"/>}
+                    <p className="font-medium leading-relaxed whitespace-pre-wrap">{msg.messageText}</p>
+                    <div className={`flex items-center justify-end gap-1.5 mt-1 text-[10px] ${isIn ? 'opacity-50' : 'opacity-70'}`}>
+                      <span>{new Date(msg.createdAt).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</span>
+                      <button type="button" onClick={() => handleToggleStarMessage(msg._id, msg.starred)}
+                        className={msg.starred ? 'text-amber-400' : 'opacity-40 hover:opacity-100'}>
+                        <Star size={9} fill={msg.starred ? 'currentColor' : 'none'}/>
+                      </button>
+                      {!isIn && (msg.status==='READ' ? <CheckCheck size={10} className="text-sky-300"/> : <Check size={10}/>)}
                     </div>
-                  );
-                })
-              )}
-              <div ref={messagesEndRef} />
-            </div>
-
-            {/* Compose Message Footer */}
-            <form onSubmit={handleSendMessage} className="p-4 border-t border-slate-150 bg-white">
-              {showMediaInput && (
-                <div className="mb-3.5 p-3 rounded-2xl border border-indigo-100 bg-indigo-50/20 flex items-center gap-2 animate-fadeIn">
-                  <Image size={15} className="text-indigo-600 shrink-0" />
-                  <input
-                    type="url"
-                    placeholder="Attach external image URL (e.g. https://domain.com/promo.png)"
-                    value={mediaUrl}
-                    onChange={(e) => setMediaUrl(e.target.value)}
-                    className="flex-1 bg-transparent text-xs text-slate-700 focus:outline-none placeholder:text-slate-400 font-semibold"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setMediaUrl('');
-                      setShowMediaInput(false);
-                    }}
-                    className="p-1 rounded-lg hover:bg-slate-200 text-slate-400 hover:text-slate-650"
-                  >
-                    <X size={12} />
-                  </button>
+                  </div>
                 </div>
-              )}
+              );
+            })}
+            {isTyping && (
+              <div className="flex justify-start">
+                <div className="rounded-2xl rounded-tl-sm px-4 py-3 border" style={S.msgIn}>
+                  <div className="flex gap-1">{[0,1,2].map(i=><div key={i} className="h-2 w-2 rounded-full bg-slate-400 animate-bounce" style={{animationDelay:`${i*0.15}s`}}/>)}</div>
+                </div>
+              </div>
+            )}
+            <div ref={messagesEndRef}/>
+          </div>
 
-              <div className="flex items-center gap-3">
-                <button
-                  type="button"
-                  onClick={() => setShowMediaInput(!showMediaInput)}
-                  className={`p-3 rounded-xl border transition-all flex items-center justify-center shrink-0 cursor-pointer ${
-                    showMediaInput
-                      ? 'bg-indigo-50 border-indigo-200 text-indigo-650'
-                      : 'border-slate-200 hover:border-slate-350 text-slate-500 hover:text-slate-750 hover:bg-slate-50'
-                  }`}
-                  title="Attach media URL"
-                >
-                  <Paperclip size={16} className="stroke-[2.2]" />
+          {/* Quick Replies */}
+          <div className="px-4 pt-3 overflow-x-auto border-t" style={{ ...S.border, backgroundColor: 'var(--bg-header)' }}>
+            <div className="flex gap-2 pb-2">
+              {quickReplies.map((r,i) => (
+                <button key={i} type="button" onClick={() => setNewMessage(r)}
+                  className="px-3 py-1.5 rounded-full text-[11px] font-bold whitespace-nowrap border transition-colors cursor-pointer"
+                  style={{ ...S.border, ...S.sub, backgroundColor: 'transparent' }}
+                  onMouseEnter={e=>{e.currentTarget.style.backgroundColor='var(--accent-soft)';e.currentTarget.style.color='var(--accent-text)';}}
+                  onMouseLeave={e=>{e.currentTarget.style.backgroundColor='transparent';e.currentTarget.style.color='var(--text-secondary)';}}>
+                  {r}
                 </button>
-                <input
-                  type="text"
-                  placeholder="Type your WhatsApp message..."
-                  value={newMessage}
-                  onChange={(e) => setNewMessage(e.target.value)}
-                  className="flex-1 px-4 py-3 rounded-xl border border-slate-200/80 focus:outline-none focus:border-indigo-650 text-xs font-semibold text-slate-800 placeholder-slate-400 bg-slate-50/40 focus:bg-white transition-colors"
-                />
-                <button
-                  type="submit"
-                  disabled={!newMessage.trim() || sending}
-                  className="px-5 py-3 bg-indigo-605 hover:bg-indigo-700 disabled:opacity-40 rounded-xl text-white text-xs font-black flex items-center gap-1.5 cursor-pointer shadow-md shadow-indigo-600/10 active:scale-95 transition-all"
-                >
-                  {sending ? (
-                    <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"></div>
-                  ) : (
-                    <>
-                      <Send size={13} /> Send
-                    </>
-                  )}
+              ))}
+            </div>
+          </div>
+
+          {/* Emoji Picker */}
+          {showEmojiPicker && (
+            <div className="absolute bottom-20 left-4 z-20 rounded-2xl p-3 shadow-xl border" style={S.panel}>
+              <div className="grid grid-cols-8 gap-1.5">
+                {commonEmojis.map((e,i) => (
+                  <button key={i} type="button" onClick={() => handleEmojiClick(e)}
+                    className="text-xl hover:scale-125 transition-transform rounded-lg p-1">{e}</button>
+                ))}
+              </div>
+              <button type="button" onClick={() => setShowEmojiPicker(false)}
+                className="w-full mt-2 text-[10px] font-bold" style={S.muted}>Close</button>
+            </div>
+          )}
+
+          {/* Compose Bar */}
+          <form onSubmit={handleSendMessage} className="px-4 py-3 border-t" style={S.header}>
+            {showMediaInput && (
+              <div className="mb-2 px-3 py-2 rounded-xl border flex items-center gap-2" style={S.input}>
+                <Image size={13} style={{ color: 'var(--accent-text)' }}/>
+                <input type="url" placeholder="Attach image URL..." value={mediaUrl}
+                  onChange={e => setMediaUrl(e.target.value)}
+                  className="flex-1 bg-transparent text-xs focus:outline-none" style={S.sub}/>
+                <button type="button" onClick={() => { setMediaUrl(''); setShowMediaInput(false); }}>
+                  <X size={12} style={S.muted}/>
                 </button>
               </div>
-            </form>
-          </>
-        ) : (
-          <div className="flex-1 flex flex-col justify-center items-center p-10 bg-slate-50/20 text-center">
-            <div className="h-16 w-16 bg-indigo-50/60 text-indigo-600 rounded-3xl flex items-center justify-center mb-4 border border-indigo-100 shadow-sm animate-pulse">
-              <MessageSquare size={26} className="stroke-[1.8]" />
+            )}
+            <div className="flex items-center gap-2">
+              {[
+                { fn: () => setShowMediaInput(v=>!v), icon: Paperclip, active: showMediaInput, title: 'Attach' },
+                { fn: () => setShowEmojiPicker(v=>!v), icon: Smile, active: showEmojiPicker, title: 'Emoji' },
+                { fn: ()=>{}, icon: Mic, active: false, title: 'Voice' },
+              ].map(({fn, icon: Icon, active, title}) => (
+                <button key={title} type="button" onClick={fn} title={title}
+                  className="p-2.5 rounded-xl border transition-colors cursor-pointer"
+                  style={active ? S.accent : { ...S.border, ...S.sub, backgroundColor: 'transparent' }}>
+                  <Icon size={17}/>
+                </button>
+              ))}
+              <input type="text" placeholder="Type a message..." value={newMessage}
+                onChange={e => { setNewMessage(e.target.value); handleTypingStart(); }}
+                onBlur={handleTypingStop}
+                className="flex-1 px-4 py-2.5 rounded-xl text-sm font-medium focus:outline-none border"
+                style={S.input}/>
+              <button type="submit" disabled={!newMessage.trim() || sending}
+                className="px-4 py-2.5 rounded-xl font-bold text-sm flex items-center gap-2 cursor-pointer disabled:opacity-40 transition-colors"
+                style={{ backgroundColor: '#25a244', color: '#fff' }}>
+                {sending ? <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"/> : <><Send size={15}/> Send</>}
+              </button>
             </div>
-            <h3 className="font-extrabold text-slate-800 text-base">Select a conversation</h3>
-            <p className="text-xs text-slate-450 mt-1.5 max-w-xs font-bold leading-relaxed">Choose a contact from the left sidebar to start chatting in real-time.</p>
+          </form>
+        </>) : (
+          <div className="flex-1 flex flex-col items-center justify-center text-center p-10" style={S.base}>
+            <div className="h-16 w-16 rounded-2xl flex items-center justify-center mb-4 border" style={{ ...S.accent, ...S.border }}>
+              <MessageSquare size={32}/>
+            </div>
+            <h3 className="font-bold text-lg mb-2" style={S.text}>Select a Conversation</h3>
+            <p className="text-sm max-w-xs" style={S.muted}>Choose a contact from the sidebar to start chatting in real-time.</p>
           </div>
         )}
       </div>
 
-      {/* 3. CRM Detail Panel (Right) - Toggleable & Enabled only when chat selected */}
+      {/* RIGHT: CRM Panel */}
       {selectedChat && contactDetails && showCrmPanel && (
-        <div className="w-80 shrink-0 bg-white border border-slate-200/80 rounded-3xl p-5 flex flex-col gap-5 overflow-y-auto shadow-sm animate-fadeIn">
-          {/* Header */}
-          <div className="pb-4 border-b border-slate-100 flex flex-col items-center text-center gap-3">
-            <div className={`h-14 w-14 rounded-2xl bg-gradient-to-br ${getAvatarGradient(getDisplayName(contactDetails.name, contactDetails.phone))} text-white font-black text-base flex items-center justify-center shadow-md`}>
-              {getDisplayName(contactDetails.name, contactDetails.phone).replace('+', '').slice(0, 2).toUpperCase()}
+        <div className="w-[300px] shrink-0 border-l flex flex-col overflow-hidden" style={S.panel}>
+          {/* Contact Header */}
+          <div className="px-4 py-5 border-b text-center" style={{ ...S.border, backgroundColor: 'var(--bg-header)' }}>
+            <div className="h-14 w-14 rounded-full mx-auto mb-3 flex items-center justify-center text-white font-black text-lg"
+              style={{ backgroundColor: getAvatarColor(getDisplayName(contactDetails.name, contactDetails.phone)) }}>
+              {getDisplayName(contactDetails.name, contactDetails.phone).replace('+','').slice(0,2).toUpperCase()}
             </div>
+            <h4 className="font-bold text-sm" style={S.text}>{getDisplayName(contactDetails.name, contactDetails.phone)}</h4>
+            {getDisplayName(contactDetails.name,contactDetails.phone)!==`+${contactDetails.phone}` && (
+              <p className="text-[11px] mt-0.5" style={S.muted}>+{contactDetails.phone}</p>
+            )}
+          </div>
+
+          <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-5">
+            {/* Stage */}
             <div>
-              <h4 className="font-black text-slate-850 text-sm tracking-tight">{getDisplayName(contactDetails.name, contactDetails.phone)}</h4>
-              {getDisplayName(contactDetails.name, contactDetails.phone) !== `+${contactDetails.phone}` && (
-                <p className="text-[10px] text-slate-450 font-bold mt-1">+{contactDetails.phone}</p>
-              )}
+              <label className="block text-[10px] font-black uppercase tracking-wider mb-1.5" style={S.muted}>CRM Stage</label>
+              <select value={contactDetails.stage} onChange={e => handleUpdateStage(e.target.value)}
+                className="w-full px-3 py-2 rounded-xl text-sm font-bold focus:outline-none border"
+                style={S.input}>
+                {['lead','contact','demo','negotiation','won','lost'].map(s=><option key={s} value={s}>{s}</option>)}
+              </select>
             </div>
-          </div>
 
-          {/* CRM Stage */}
-          <div className="flex flex-col gap-2">
-            <span className="text-[9px] font-black text-slate-450 uppercase flex items-center gap-1.5 tracking-wider">
-              <Sliders size={11} className="text-indigo-600" /> CRM Funnel Stage
-            </span>
-            <select
-              value={contactDetails.stage}
-              onChange={(e) => handleUpdateStage(e.target.value)}
-              className="w-full px-3 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs font-bold text-slate-700 cursor-pointer focus:outline-none focus:border-indigo-650"
-            >
-              <option value="lead">Lead</option>
-              <option value="contact">Contact</option>
-              <option value="demo">Demo Scheduled</option>
-              <option value="negotiation">Negotiation</option>
-              <option value="won">Won / Customer</option>
-              <option value="lost">Lost</option>
-            </select>
-          </div>
-
-          {/* Tags */}
-          <div className="flex flex-col gap-2">
-            <span className="text-[9px] font-black text-slate-450 uppercase flex items-center gap-1.5 tracking-wider">
-              <Tag size={11} className="text-indigo-600" /> CRM Tags
-            </span>
-            <div className="flex flex-wrap gap-1.5 p-2 bg-slate-50/50 rounded-2xl border border-slate-150/70 min-h-12 max-h-24 overflow-y-auto">
-              {contactDetails.tags?.length === 0 ? (
-                <span className="text-[9px] text-slate-400 italic p-1 font-semibold">No tags assigned.</span>
-              ) : (
-                contactDetails.tags?.map((tag) => (
-                  <span
-                    key={tag}
-                    className="px-2 py-0.5 bg-indigo-50 border border-indigo-100 text-indigo-700 text-[9px] font-black rounded-lg flex items-center gap-1"
-                  >
-                    {tag}
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveTag(tag)}
-                      className="hover:text-red-500 cursor-pointer"
-                    >
-                      <X size={10} />
-                    </button>
-                  </span>
-                ))
-              )}
-            </div>
-            
-            <form onSubmit={handleAddTag} className="flex gap-2">
-              <input
-                type="text"
-                placeholder="New tag..."
-                value={newTag}
-                onChange={(e) => setNewTag(e.target.value)}
-                className="flex-1 px-3 py-2 rounded-xl border border-slate-200 text-xs font-semibold focus:outline-none focus:border-indigo-650 placeholder-slate-400"
-              />
-              <button
-                type="submit"
-                className="p-2 bg-indigo-50 border border-indigo-200 hover:bg-indigo-100 text-indigo-700 rounded-xl cursor-pointer transition-colors"
-              >
-                <Plus size={14} />
-              </button>
-            </form>
-          </div>
-
-          {/* Collapsible/Optional Personalization Variables Section */}
-          <div className="flex flex-col gap-2 border-t border-slate-100 pt-4">
-            <button
-              type="button"
-              onClick={() => setShowVariablesSection(!showVariablesSection)}
-              className="flex items-center justify-between text-left cursor-pointer hover:opacity-80 transition-opacity"
-            >
-              <span className="text-[9px] font-black text-slate-450 uppercase flex items-center gap-1.5 tracking-wider">
-                <Clock size={11} className="text-indigo-600" /> Personalization variables
-              </span>
-              {showVariablesSection ? (
-                <ChevronUp size={14} className="text-slate-400" />
-              ) : (
-                <ChevronDown size={14} className="text-slate-400" />
-              )}
-            </button>
-            
-            {showVariablesSection ? (
-              <div className="flex flex-col gap-3 mt-1.5 animate-fadeIn">
-                <p className="text-[10px] text-slate-400 font-semibold leading-relaxed">
-                  Optional: Map custom fields (like name, city, deal size) for bulk broadcast customization.
-                </p>
-                <div className="flex flex-col gap-1 max-h-36 overflow-y-auto p-2 bg-slate-50/50 rounded-2xl border border-slate-150/70">
-                  {Object.keys(contactDetails.variables || {}).length === 0 ? (
-                    <span className="text-[9px] text-slate-400 italic p-1 font-semibold">No variables mapped yet.</span>
-                  ) : (
-                    Object.entries(contactDetails.variables || {}).map(([key, val]) => (
-                      <div
-                        key={key}
-                        className="flex justify-between items-center gap-2 p-1.5 bg-white border border-slate-200 rounded-xl text-[10px] font-bold text-slate-650"
-                      >
-                        <span className="truncate">
-                          <strong className="text-slate-800">{key}:</strong> {val}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveVariable(key)}
-                          className="text-slate-400 hover:text-red-500 cursor-pointer shrink-0"
-                        >
-                          <X size={10} />
-                        </button>
-                      </div>
-                    ))
-                  )}
+            {/* Scores */}
+            <div className="grid grid-cols-2 gap-3">
+              {[['customerScore','Customer'],['leadScore','Lead']].map(([key,label])=>(
+                <div key={key}>
+                  <label className="block text-[10px] font-black uppercase tracking-wider mb-1.5" style={S.muted}>{label} Score</label>
+                  <input type="number" min="0" max="100" value={contactDetails[key]||0}
+                    onChange={e=>{const v=Math.max(0,Math.min(100,Number(e.target.value)));setContactDetails(p=>({...p,[key]:v}));handleUpdateContact({[key]:v});}}
+                    className="w-full px-3 py-2 rounded-xl text-sm font-bold focus:outline-none border"
+                    style={S.input}/>
                 </div>
+              ))}
+            </div>
 
-                <form onSubmit={handleAddVariable} className="flex flex-col gap-2">
-                  <div className="grid grid-cols-2 gap-2">
-                    <input
-                      type="text"
-                      placeholder="e.g. city"
-                      required
-                      value={newVarKey}
-                      onChange={(e) => setNewVarKey(e.target.value)}
-                      className="px-2 py-2 rounded-xl border border-slate-200 text-xs font-semibold focus:outline-none focus:border-indigo-650"
-                    />
-                    <input
-                      type="text"
-                      placeholder="Delhi"
-                      required
-                      value={newVarValue}
-                      onChange={(e) => setNewVarValue(e.target.value)}
-                      className="px-2 py-2 rounded-xl border border-slate-200 text-xs font-semibold focus:outline-none focus:border-indigo-650"
-                    />
-                  </div>
-                  <button
-                    type="submit"
-                    className="py-2 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-xl text-[10px] font-black flex items-center justify-center gap-1 cursor-pointer transition-colors shadow-sm active:scale-95"
-                  >
-                    <PlusCircle size={12} /> Save Variable
+            {/* Dates */}
+            <div className="grid grid-cols-2 gap-3">
+              {[['birthday','Birthday'],['anniversary','Anniversary']].map(([key,label])=>(
+                <div key={key}>
+                  <label className="block text-[10px] font-black uppercase tracking-wider mb-1.5" style={S.muted}>{label}</label>
+                  <input type="date" value={contactDetails[key]?new Date(contactDetails[key]).toISOString().split('T')[0]:''}
+                    onChange={e=>{const v=e.target.value?new Date(e.target.value):null;setContactDetails(p=>({...p,[key]:v}));handleUpdateContact({[key]:v});}}
+                    className="w-full px-3 py-2 rounded-xl text-sm font-bold focus:outline-none border"
+                    style={S.input}/>
+                </div>
+              ))}
+            </div>
+
+            {/* Tags */}
+            <div>
+              <label className="block text-[10px] font-black uppercase tracking-wider mb-1.5" style={S.muted}>Tags</label>
+              <div className="flex flex-wrap gap-1.5 p-2.5 rounded-xl border min-h-[40px] mb-2" style={{ ...S.border, backgroundColor: 'var(--bg-input)' }}>
+                {contactDetails.tags?.length===0 ? (
+                  <span className="text-[11px] italic" style={S.muted}>No tags</span>
+                ) : contactDetails.tags?.map(tag => (
+                  <span key={tag} className="px-2 py-0.5 rounded-lg text-[11px] font-bold flex items-center gap-1 border" style={S.accent}>
+                    {tag}<button type="button" onClick={()=>handleRemoveTag(tag)}><X size={9}/></button>
+                  </span>
+                ))}
+              </div>
+              <form onSubmit={handleAddTag} className="flex gap-2">
+                <input type="text" placeholder="Add tag..." value={newTag} onChange={e=>setNewTag(e.target.value)}
+                  className="flex-1 px-3 py-1.5 rounded-xl text-xs font-semibold focus:outline-none border" style={S.input}/>
+                <button type="submit" className="p-1.5 rounded-xl border cursor-pointer" style={S.accent}><Plus size={14}/></button>
+              </form>
+            </div>
+
+            {/* Internal Notes */}
+            <div>
+              <button type="button" onClick={()=>setShowInternalNotesSection(v=>!v)}
+                className="flex items-center justify-between w-full mb-2">
+                <label className="text-[10px] font-black uppercase tracking-wider cursor-pointer" style={S.muted}>Internal Notes</label>
+                {showInternalNotesSection ? <ChevronUp size={13} style={S.muted}/> : <ChevronDown size={13} style={S.muted}/>}
+              </button>
+              {showInternalNotesSection && (<>
+                <div className="flex flex-col gap-2 max-h-36 overflow-y-auto p-2.5 rounded-xl border mb-2" style={{ ...S.border, backgroundColor: 'var(--bg-input)' }}>
+                  {contactDetails.internalNotes?.length===0 ? (
+                    <span className="text-[11px] italic" style={S.muted}>No notes yet</span>
+                  ) : contactDetails.internalNotes?.map((note,i)=>(
+                    <div key={i} className="p-2 rounded-lg border text-[11px]" style={S.panel}>
+                      <p className="font-semibold" style={S.text}>{note.text}</p>
+                      <p className="mt-0.5" style={S.muted}>{new Date(note.createdAt).toLocaleString()}</p>
+                    </div>
+                  ))}
+                </div>
+                <form onSubmit={handleAddInternalNote} className="flex flex-col gap-1.5">
+                  <textarea placeholder="Add internal note..." value={newInternalNote}
+                    onChange={e=>setNewInternalNote(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl text-xs font-semibold focus:outline-none border resize-none"
+                    style={S.input} rows={2}/>
+                  <button type="submit" className="py-1.5 rounded-xl text-[11px] font-black flex items-center justify-center gap-1.5 cursor-pointer border" style={S.accent}>
+                    <PlusCircle size={11}/> Add Note
                   </button>
                 </form>
-              </div>
-            ) : (
-              <button
-                type="button"
-                onClick={() => setShowVariablesSection(true)}
-                className="text-left text-[10px] text-indigo-650 font-bold hover:underline mt-1 cursor-pointer"
-              >
-                + View / add personalization variables
+              </>)}
+            </div>
+
+            {/* Notes */}
+            <div>
+              <button type="button" onClick={()=>setShowNotesSection(v=>!v)}
+                className="flex items-center justify-between w-full mb-2">
+                <label className="text-[10px] font-black uppercase tracking-wider cursor-pointer" style={S.muted}>Notes</label>
+                {showNotesSection ? <ChevronUp size={13} style={S.muted}/> : <ChevronDown size={13} style={S.muted}/>}
               </button>
-            )}
+              {showNotesSection && (<>
+                <div className="flex flex-col gap-2 max-h-36 overflow-y-auto p-2.5 rounded-xl border mb-2" style={{ ...S.border, backgroundColor: 'var(--bg-input)' }}>
+                  {contactDetails.notes?.length===0 ? (
+                    <span className="text-[11px] italic" style={S.muted}>No notes yet</span>
+                  ) : contactDetails.notes?.map((note,i)=>(
+                    <div key={i} className="p-2 rounded-lg border text-[11px]" style={S.panel}>
+                      <p className="font-semibold" style={S.text}>{note.text}</p>
+                      <p className="mt-0.5" style={S.muted}>{new Date(note.createdAt).toLocaleString()}</p>
+                    </div>
+                  ))}
+                </div>
+                <form onSubmit={handleAddNote} className="flex flex-col gap-1.5">
+                  <textarea placeholder="Add note..." value={newNote}
+                    onChange={e=>setNewNote(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl text-xs font-semibold focus:outline-none border resize-none"
+                    style={S.input} rows={2}/>
+                  <button type="submit" className="py-1.5 rounded-xl text-[11px] font-black flex items-center justify-center gap-1.5 cursor-pointer border" style={S.accent}>
+                    <PlusCircle size={11}/> Add Note
+                  </button>
+                </form>
+              </>)}
+            </div>
           </div>
         </div>
       )}
@@ -831,3 +938,4 @@ const LiveChat = () => {
 };
 
 export default LiveChat;
+

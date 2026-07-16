@@ -17,7 +17,14 @@ import {
   updatePlan,
   deletePlan,
   assignPlanToTenant,
-  getTenantUsage
+  getTenantUsage,
+  getSystemSettings,
+  updateSystemSettings,
+  getCoupons,
+  createCoupon,
+  deleteCoupon,
+  getTransactions,
+  impersonateTenant
 } from '../controllers/admin.js';
 import { authenticate, requireAdmin } from '../middleware/auth.js';
 
@@ -49,5 +56,20 @@ router.put('/plans/:id', updatePlan);
 router.delete('/plans/:id', deletePlan);
 router.put('/tenants/:id/plan', assignPlanToTenant);
 router.get('/tenants/:id/usage', getTenantUsage);
+
+// System Settings
+router.get('/settings', getSystemSettings);
+router.put('/settings', updateSystemSettings);
+
+// Coupon Routes
+router.get('/coupons', getCoupons);
+router.post('/coupons', createCoupon);
+router.delete('/coupons/:id', deleteCoupon);
+
+// Transaction Routes
+router.get('/transactions', getTransactions);
+
+// Tenant Impersonation
+router.post('/tenants/:id/impersonate', impersonateTenant);
 
 export default router;

@@ -73,13 +73,47 @@ export const AuthProvider = ({ children }) => {
       // Quiet fail
     } finally {
       localStorage.removeItem('accessToken');
+      localStorage.removeItem('adminToken');
       setUser(null);
       setTenant(null);
     }
   };
 
+  const impersonate = async (accessToken, impersonatedUser) => {
+    setLoading(true);
+    try {
+      const originalToken = localStorage.getItem('accessToken');
+      if (!localStorage.getItem('adminToken')) {
+        localStorage.setItem('adminToken', originalToken);
+      }
+      localStorage.setItem('accessToken', accessToken);
+      setUser(impersonatedUser);
+      await fetchProfile();
+    } catch (err) {
+      console.error('Failed to impersonate:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const stopImpersonating = async () => {
+    setLoading(true);
+    try {
+      const adminToken = localStorage.getItem('adminToken');
+      if (adminToken) {
+        localStorage.setItem('accessToken', adminToken);
+        localStorage.removeItem('adminToken');
+        await fetchProfile();
+      }
+    } catch (err) {
+      console.error('Failed to stop impersonating:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
-    <AuthContext.Provider value={{ user, tenant, loading, login, signup, logout, fetchProfile }}>
+    <AuthContext.Provider value={{ user, tenant, loading, login, signup, logout, fetchProfile, impersonate, stopImpersonating }}>
       {children}
     </AuthContext.Provider>
   );

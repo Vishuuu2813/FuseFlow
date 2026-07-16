@@ -47,6 +47,15 @@ const tenantSchema = new mongoose.Schema(
       timezone: { type: String, default: 'UTC' },
       autoReplyDelaySeconds: { type: Number, default: 2 },
       aiEnabled: { type: Boolean, default: false },
+      birthdayReminderEnabled: { type: Boolean, default: false },
+      birthdayReminderTemplate: { type: String, default: 'Happy Birthday {{name}}! Wishing you a fantastic day ahead! 🎉' },
+      birthdayReminderTime: { type: String, default: '09:00' }, // HH:mm local time
+      lastBirthdayRunDate: { type: String, default: null }, // 'YYYY-MM-DD'
+      anniversaryReminderEnabled: { type: Boolean, default: false },
+      anniversaryReminderTemplate: { type: String, default: 'Happy Anniversary {{name}}! Wishing you a wonderful year ahead! 💕' },
+      anniversaryReminderTime: { type: String, default: '09:00' }, // HH:mm local time
+      lastAnniversaryRunDate: { type: String, default: null }, // 'YYYY-MM-DD'
+      reminderSessionId: { type: mongoose.Schema.Types.ObjectId, ref: 'WhatsAppSession', default: null }
     },
     apiKey: {
       type: String,

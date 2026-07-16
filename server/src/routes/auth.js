@@ -14,7 +14,8 @@ import {
   deleteTenantUser,
   changePassword,
   getPublicPlans,
-  renewPlan
+  renewPlan,
+  updateTenantSettings
 } from '../controllers/auth.js';
 import { authenticate } from '../middleware/auth.js';
 import { requireWorkspaceAdmin } from '../middleware/access.js';
@@ -28,6 +29,7 @@ router.post('/logout', logout);
 router.get('/public-plans', getPublicPlans);
 router.post('/renew-plan', renewPlan);
 router.get('/me', authenticate, getProfile);
+router.put('/tenant', authenticate, requireWorkspaceAdmin, updateTenantSettings);
 router.post('/change-password', authenticate, changePassword);
 
 // Admin Auth Routes

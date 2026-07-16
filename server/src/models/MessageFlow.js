@@ -4,7 +4,15 @@ const flowStepSchema = new mongoose.Schema({
   stepNumber: { type: Number, required: true },
   delaySeconds: { type: Number, default: 0 },
   messageText: { type: String, required: true },
-  mediaUrl: { type: String, default: '' }
+  mediaUrl: { type: String, default: '' },
+  isWaitStep: { type: Boolean, default: false },
+  autoProgress: { type: Boolean, default: true },
+  branches: [
+    {
+      keywords: [{ type: String, lowercase: true, trim: true }],
+      targetStepNumber: { type: Number }
+    }
+  ]
 });
 
 const messageFlowSchema = new mongoose.Schema(

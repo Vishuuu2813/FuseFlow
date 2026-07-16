@@ -1,3 +1,4 @@
+import mongoose from 'mongoose';
 import User from '../models/User.js';
 import Tenant from '../models/Tenant.js';
 import Plan from '../models/Plan.js';
@@ -746,6 +747,54 @@ export const renewPlan = async (req, res, next) => {
     });
 
     res.json({ message: 'Plan renewed successfully. You can now login.', tenant });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const updateTenantSettings = async (req, res, next) => {
+  try {
+    const tenantId = req.user.tenantId;
+    if (!tenantId) {
+      return res.status(400).json({ message: 'User does not belong to a workspace.' });
+    }
+
+    const {
+      name,
+      timezone,
+      autoReplyDelaySeconds,
+      aiEnabled,
+      birthdayReminderEnabled,
+      birthdayReminderTemplate,
+      birthdayReminderTime,
+      anniversaryReminderEnabled,
+      anniversaryReminderTemplate,
+      anniversaryReminderTime,
+      reminderSessionId
+    } = req.body;
+
+    const tenant = await Tenant.findById(tenantId);
+    if (!tenant) {
+      return res.status(404).json({ message: 'Workspace not found.' });
+    }
+
+    if (name) tenant.name = name;
+    if (timezone) tenant.settings.timezone = timezone;
+    if (autoReplyDelaySeconds !== undefined) tenant.settings.autoReplyDelaySeconds = Number(autoReplyDelaySeconds);
+    if (aiEnabled !== undefined) tenant.settings.aiEnabled = !!aiEnabled;
+    if (birthdayReminderEnabled !== undefined) tenant.settings.birthdayReminderEnabled = !!birthdayReminderEnabled;
+    if (birthdayReminderTemplate !== undefined) tenant.settings.birthdayReminderTemplate = birthdayReminderTemplate;
+    if (birthdayReminderTime !== undefined) tenant.settings.birthdayReminderTime = birthdayReminderTime;
+    if (anniversaryReminderEnabled !== undefined) tenant.settings.anniversaryReminderEnabled = !!anniversaryReminderEnabled;
+    if (anniversaryReminderTemplate !== undefined) tenant.settings.anniversaryReminderTemplate = anniversaryReminderTemplate;
+    if (anniversaryReminderTime !== undefined) tenant.settings.anniversaryReminderTime = anniversaryReminderTime;
+    
+    if (reminderSessionId !== undefined) {
+      tenant.settings.reminderSessionId = reminderSessionId ? new mongoose.Types.ObjectId(reminderSessionId) : null;
+    }
+
+    await tenant.save();
+    res.json(tenant);
   } catch (error) {
     next(error);
   }

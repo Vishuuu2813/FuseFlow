@@ -23,11 +23,11 @@ const contactFlowStateSchema = new mongoose.Schema(
     },
     nextExecutionAt: {
       type: Date,
-      required: true,
+      required: false,
     },
     status: {
       type: String,
-      enum: ['RUNNING', 'COMPLETED', 'FAILED'],
+      enum: ['RUNNING', 'COMPLETED', 'FAILED', 'AWAITING_INPUT'],
       default: 'RUNNING',
     },
     logs: [

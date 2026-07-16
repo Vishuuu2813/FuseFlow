@@ -5,6 +5,8 @@ import MessageLog from '../models/MessageLog.js';
 import Contact from '../models/Contact.js';
 import AuditLog from '../models/AuditLog.js';
 import Plan from '../models/Plan.js';
+import Coupon from '../models/Coupon.js';
+import Transaction from '../models/Transaction.js';
 import { sessions, connectToWhatsApp, disconnectWhatsApp } from '../services/whatsapp.js';
 import { writeAuditLog } from '../services/audit.js';
 
@@ -518,4 +520,263 @@ export const upgradePlan = async (req, res, next) => {
     next(error);
   }
 };
+
+export const clearMessageLogs = async (req, res, next) => {
+  try {
+    const { days } = req.body;
+    if (days === undefined || isNaN(days)) {
+      return res.status(450).json({ message: 'Valid number of days is required.' });
+    }
+
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - parseInt(days));
+
+    const result = await MessageLog.deleteMany({
+      tenantId: req.tenantId,
+      createdAt: { $lt: cutoffDate }
+    });
+
+    await writeAuditLog(req, {
+      action: 'MESSAGE_LOGS_CLEANUP',
+      entityType: 'MessageLog',
+      metadata: { days, deletedCount: result.deletedCount }
+    });
+
+    res.json({ message: `Successfully cleared ${result.deletedCount} log entries older than ${days} days.`, deletedCount: result.deletedCount });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const validateCoupon = async (req, res, next) => {
+  try {
+    const { code } = req.body;
+    if (!code) {
+      return res.status(400).json({ message: 'Coupon code is required.' });
+    }
+
+    const coupon = await Coupon.findOne({ code: code.toUpperCase(), active: true });
+    if (!coupon) {
+      return res.status(404).json({ message: 'Invalid or inactive coupon code.' });
+    }
+
+    if (new Date() > coupon.expiresAt) {
+      return res.status(400).json({ message: 'This coupon has expired.' });
+    }
+
+    if (coupon.uses >= coupon.maxUses) {
+      return res.status(400).json({ message: 'This coupon usage limit has been reached.' });
+    }
+
+    res.json({
+      valid: true,
+      code: coupon.code,
+      discountType: coupon.discountType,
+      discountValue: coupon.discountValue
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const simulateCheckout = async (req, res, next) => {
+  try {
+    const { planId, gateway, couponCode } = req.body;
+    const tenantId = req.tenantId;
+
+    const tenant = await Tenant.findById(tenantId);
+    if (!tenant) {
+      return res.status(404).json({ message: 'Workspace not found.' });
+    }
+
+    const plan = await Plan.findById(planId);
+    if (!plan) {
+      return res.status(404).json({ message: 'Plan not found.' });
+    }
+
+    // Calculate pricing
+    let originalPrice = plan.price;
+    let finalPrice = originalPrice;
+    let appliedCoupon = null;
+
+    if (couponCode) {
+      const coupon = await Coupon.findOne({ code: couponCode.toUpperCase(), active: true });
+      if (coupon && new Date() <= coupon.expiresAt && coupon.uses < coupon.maxUses) {
+        appliedCoupon = coupon;
+        if (coupon.discountType === 'PERCENTAGE') {
+          finalPrice = Math.max(0, originalPrice - (originalPrice * coupon.discountValue) / 100);
+        } else if (coupon.discountType === 'FIXED') {
+          finalPrice = Math.max(0, originalPrice - coupon.discountValue);
+        }
+        
+        // Increment coupon uses
+        coupon.uses += 1;
+        await coupon.save();
+      }
+    }
+
+    // Mock payment successful - Create invoice record
+    const invoiceNum = 'INV-' + Date.now() + '-' + Math.floor(1000 + Math.random() * 9000);
+    const mockPaymentId = 'pay_' + Math.random().toString(36).substring(2, 11) + Math.random().toString(36).substring(2, 6);
+
+    const transaction = await Transaction.create({
+      tenantId,
+      amount: finalPrice,
+      originalAmount: originalPrice,
+      planName: plan.name,
+      paymentGateway: gateway || 'Stripe',
+      paymentId: mockPaymentId,
+      status: 'SUCCESS',
+      couponCode: appliedCoupon ? appliedCoupon.code : '',
+      invoiceNumber: invoiceNum
+    });
+
+    // Update Tenant plan info and validity limits
+    tenant.plan = plan.name;
+    tenant.limits = {
+      maxDevices: plan.deviceLimit,
+      maxContacts: plan.maxContacts || 1000,
+      maxMessagesPerMonth: plan.maxMessagesPerMonth,
+      maxAiCredits: plan.maxAiCredits,
+      maxStorageMb: plan.maxStorageMb,
+      dailyMessageLimit: plan.dailyMessageLimit || 100,
+      defaultDelaySeconds: plan.defaultDelaySeconds || 5,
+      bulkScheduling: plan.bulkScheduling !== false,
+      flowBuilder: plan.flowBuilder !== false,
+      aiAutoReply: plan.aiAutoReply !== false
+    };
+
+    tenant.planStartDate = new Date();
+    const days = plan.validityDays || 30;
+    tenant.planExpiresAt = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
+    tenant.status = 'active';
+
+    await tenant.save();
+
+    await writeAuditLog(req, {
+      action: 'TENANT_SUBSCRIPTION_PURCHASED',
+      entityType: 'Transaction',
+      entityId: transaction._id,
+      tenantId: tenant._id,
+      metadata: { plan: plan.name, amountPaid: finalPrice, invoiceNumber: invoiceNum }
+    });
+
+    res.json({
+      message: 'Payment completed successfully!',
+      transaction,
+      tenant
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getInvoices = async (req, res, next) => {
+  try {
+    const invoices = await Transaction.find({ tenantId: req.tenantId }).sort({ createdAt: -1 });
+    res.json(invoices);
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getAnalytics = async (req, res, next) => {
+  try {
+    const tenantId = req.tenantId;
+    const { timeframe = 'monthly' } = req.query;
+
+    // ── helpers ──────────────────────────────────────────────────
+    const daysBack = timeframe === 'yearly' ? 365 : timeframe === 'weekly' ? 7 : timeframe === 'daily' ? 1 : 30;
+    const since = new Date(); since.setDate(since.getDate() - daysBack); since.setHours(0,0,0,0);
+
+    // ── KPI counts ───────────────────────────────────────────────
+    const [totalSent, totalDelivered, totalRead, totalFailed,
+           totalContacts, totalCampaigns, totalFlows, totalTemplates,
+           incomingTotal] = await Promise.all([
+      MessageLog.countDocuments({ tenantId, direction:'OUTGOING', status:{$in:['SENT','DELIVERED','READ']}, createdAt:{$gte:since} }),
+      MessageLog.countDocuments({ tenantId, direction:'OUTGOING', status:{$in:['DELIVERED','READ']}, createdAt:{$gte:since} }),
+      MessageLog.countDocuments({ tenantId, direction:'OUTGOING', status:'READ', createdAt:{$gte:since} }),
+      MessageLog.countDocuments({ tenantId, direction:'OUTGOING', status:'FAILED', createdAt:{$gte:since} }),
+      Contact.countDocuments({ tenantId }),
+      (async()=>{ try { const C=await import('../models/Campaign.js'); return C.default.countDocuments({tenantId}); } catch(e){return 0;} })(),
+      (async()=>{ try { const F=await import('../models/MessageFlow.js'); return F.default.countDocuments({tenantId}); } catch(e){return 0;} })(),
+      (async()=>{ try { const T=await import('../models/MessageTemplate.js'); return T.default.countDocuments({tenantId}); } catch(e){return 0;} })(),
+      MessageLog.countDocuments({ tenantId, direction:'INCOMING', createdAt:{$gte:since} }),
+    ]);
+
+    const deliveryRate = totalSent > 0 ? Math.round((totalDelivered/totalSent)*100) : 0;
+    const readRate = totalDelivered > 0 ? Math.round((totalRead/totalDelivered)*100) : 0;
+
+    // ── Daily message trend (last N days) ───────────────────────
+    const trendPoints = Math.min(daysBack, 30);
+    const messageTrend = [];
+    for (let i = trendPoints - 1; i >= 0; i--) {
+      const d = new Date(); d.setDate(d.getDate()-i); d.setHours(0,0,0,0);
+      const end = new Date(d); end.setHours(23,59,59,999);
+      const [s, r] = await Promise.all([
+        MessageLog.countDocuments({ tenantId, direction:'OUTGOING', status:{$in:['SENT','DELIVERED','READ']}, createdAt:{$gte:d,$lte:end} }),
+        MessageLog.countDocuments({ tenantId, direction:'INCOMING', createdAt:{$gte:d,$lte:end} }),
+      ]);
+      messageTrend.push({ name: d.toLocaleDateString('en-US',{month:'short',day:'numeric'}), sent:s, received:r });
+    }
+
+    // ── Contact growth (new contacts per day, last N days) ──────
+    const contactGrowth = [];
+    for (let i = Math.min(daysBack,14)-1; i>=0; i--) {
+      const d = new Date(); d.setDate(d.getDate()-i); d.setHours(0,0,0,0);
+      const end = new Date(d); end.setHours(23,59,59,999);
+      const count = await Contact.countDocuments({ tenantId, createdAt:{$gte:d,$lte:end} });
+      contactGrowth.push({ name: d.toLocaleDateString('en-US',{month:'short',day:'numeric'}), contacts:count });
+    }
+
+    // ── Contact pipeline funnel ──────────────────────────────────
+    const stages = ['lead','contact','demo','negotiation','won','lost'];
+    const stageCounts = await Promise.all(stages.map(s => Contact.countDocuments({tenantId, stage:s})));
+    const pipelineFunnel = stages.map((name,i) => ({ name: name.charAt(0).toUpperCase()+name.slice(1), value: stageCounts[i] })).filter(s=>s.value>0);
+
+    // ── 7x12 Heatmap (day x 2hr blocks) ─────────────────────────
+    const daysOfWeek = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+    const heatmapData = [];
+    const heatSince = new Date(); heatSince.setDate(heatSince.getDate()-28);
+    const allLogs = await MessageLog.find({ tenantId, createdAt:{$gte:heatSince} }, 'createdAt direction').lean();
+    const heatMap = {};
+    allLogs.forEach(log => {
+      const d = new Date(log.createdAt);
+      const day = daysOfWeek[d.getDay()===0?6:d.getDay()-1];
+      const hour = Math.floor(d.getHours()/2)*2;
+      const key = `${day}-${hour}`;
+      heatMap[key] = (heatMap[key]||0)+1;
+    });
+    const maxVal = Math.max(1, ...Object.values(heatMap));
+    daysOfWeek.forEach(day => {
+      for(let h=0; h<24; h+=2) {
+        const key = `${day}-${h}`;
+        heatmapData.push({ day, hour:`${String(h).padStart(2,'0')}:00`, count: heatMap[key]||0, intensity: Math.round(((heatMap[key]||0)/maxVal)*100) });
+      }
+    });
+
+    // ── Top contacts by message count ────────────────────────────
+    const topContactsAgg = await MessageLog.aggregate([
+      { $match: { tenantId: new (await import('mongoose')).default.Types.ObjectId(tenantId), createdAt:{$gte:since} } },
+      { $group: { _id:'$phone', total:{$sum:1}, incoming:{$sum:{$cond:[{$eq:['$direction','INCOMING']},1,0]}} } },
+      { $sort: { total:-1 } }, { $limit:5 }
+    ]);
+    const topContacts = await Promise.all(topContactsAgg.map(async r => {
+      const c = await Contact.findOne({tenantId, phone:r._id},{name:1,phone:1}).lean();
+      return { name: c?.name||`+${r._id}`, messages: r.total, incoming: r.incoming };
+    }));
+
+    res.json({
+      kpi: { totalSent, totalDelivered, totalRead, totalFailed, totalContacts, totalCampaigns, totalFlows, totalTemplates, incomingTotal, deliveryRate, readRate },
+      messageTrend,
+      contactGrowth,
+      pipelineFunnel,
+      heatmapData,
+      topContacts,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 

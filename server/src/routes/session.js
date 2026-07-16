@@ -12,7 +12,12 @@ import {
   getMessageLogs,
   getDashboardStats,
   getAvailablePlans,
-  upgradePlan
+  upgradePlan,
+  clearMessageLogs,
+  validateCoupon,
+  simulateCheckout,
+  getInvoices,
+  getAnalytics
 } from '../controllers/session.js';
 import { authenticate } from '../middleware/auth.js';
 import { requireTenant } from '../middleware/tenant.js';
@@ -36,16 +41,9 @@ const storage = multer.diskStorage({
 
 const upload = multer({
   storage,
-  limits: { fileSize: 300 * 1024 }, // 300 KB limit
+  limits: { fileSize: 500 * 1024 * 1024 }, // 500 MB limit (virtually unlimited)
   fileFilter: (req, file, cb) => {
-    const allowedMimeTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
-    const allowedExtension = /\.(jpe?g|png|webp|gif)$/i.test(file.originalname);
-
-    if (!allowedMimeTypes.includes(file.mimetype) || !allowedExtension) {
-      return cb(new Error('Only JPG, PNG, WEBP, or GIF images up to 300 KB are allowed.'));
-    }
-
-    cb(null, true);
+    cb(null, true); // Allow all file types (images, videos, APKs, documents)
   }
 });
 
@@ -53,20 +51,36 @@ router.use(authenticate);
 router.use(requireTenant);
 router.use(requireActiveTenant);
 
-router.post('/upload', requireUserPermission('sendMessage'), upload.single('image'), (req, res) => {
-  if (!req.file) {
-    return res.status(400).json({ message: 'No file uploaded or file exceeds 300 KB limit.' });
+const uploadFields = upload.fields([
+  { name: 'file', maxCount: 1 },
+  { name: 'image', maxCount: 1 }
+]);
+
+router.post('/upload', requireUserPermission('sendMessage'), uploadFields, (req, res) => {
+  const uploadedFile = req.files?.file?.[0] || req.files?.image?.[0];
+  if (!uploadedFile) {
+    return res.status(400).json({ message: 'No file uploaded.' });
   }
-  const fileUrl = `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`;
-  res.json({ url: fileUrl });
+  const fileUrl = `${req.protocol}://${req.get('host')}/uploads/${uploadedFile.filename}`;
+  res.json({
+    url: fileUrl,
+    filename: uploadedFile.originalname,
+    mimetype: uploadedFile.mimetype,
+    size: uploadedFile.size
+  });
 });
 
 router.get('/', getSessions);
 router.post('/', requireTenantAdminOrPlatformAdmin, createSession);
 router.get('/logs', requireUserPermission('messageLogs'), getMessageLogs);
+router.delete('/logs/cleanup', requireTenantAdminOrPlatformAdmin, clearMessageLogs);
 router.get('/dashboard-stats', getDashboardStats);
 router.get('/plans', getAvailablePlans);
 router.post('/upgrade-plan', requireTenantAdminOrPlatformAdmin, upgradePlan);
+router.post('/validate-coupon', validateCoupon);
+router.post('/checkout', requireTenantAdminOrPlatformAdmin, simulateCheckout);
+router.get('/invoices', getInvoices);
+router.get('/analytics', getAnalytics);
 router.post('/:id/send-message', requireUserPermission('sendMessage'), sendSingleMessage);
 router.post('/:id/connect', requireTenantAdminOrPlatformAdmin, connectSession);
 router.post('/:id/disconnect', requireTenantAdminOrPlatformAdmin, disconnectSession);

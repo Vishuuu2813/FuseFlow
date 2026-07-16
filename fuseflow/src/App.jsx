@@ -25,6 +25,9 @@ import Profile from './pages/Profile';
 import Billing from './pages/Billing';
 import LiveChat from './pages/LiveChat';
 import RenewSubscription from './pages/RenewSubscription';
+import Templates from './pages/Templates';
+import Analytics from './pages/Analytics';
+import AdminBilling from './pages/AdminBilling';
 
 function App() {
   return (
@@ -41,6 +44,7 @@ function App() {
 
           {/* Public Admin Authentication Routes */}
           <Route path="/admin-login" element={<AdminLogin />} />
+          <Route path="/admin/login" element={<AdminLogin />} />
           <Route path="/admin-register" element={<AdminRegister />} />
 
           {/* Protected Dashboard Routes */}
@@ -114,9 +118,16 @@ function App() {
             />
             <Route path="users" element={<WorkspaceUsers />} />
             <Route path="plans" element={<AdminPlans />} />
-            <Route path="admin" element={<AdminPanel />} />
+            <Route path="admin" element={<AdminPanel tab="overview" />} />
+            <Route path="admin/workspaces" element={<AdminPanel tab="tenants" />} />
+            <Route path="admin/config" element={<AdminPanel tab="system" />} />
+            <Route path="admin/logs" element={<AdminPanel tab="audit" />} />
+            <Route path="admin/security" element={<AdminPanel tab="security" />} />
+            <Route path="admin/billing" element={<AdminBilling />} />
             <Route path="profile" element={<Profile />} />
             <Route path="billing" element={<Billing />} />
+            <Route path="templates" element={<Templates />} />
+            <Route path="analytics" element={<Analytics />} />
           </Route>
         </Routes>
       </AuthProvider>

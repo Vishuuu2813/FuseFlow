@@ -27,6 +27,11 @@ const messageLogSchema = new mongoose.Schema(
     mediaUrl: {
       type: String,
     },
+    mediaType: {
+      type: String,
+      enum: ['image', 'video', 'audio', 'document', 'location', 'contact', 'text'],
+      default: 'text',
+    },
     status: {
       type: String,
       enum: ['PENDING', 'SENT', 'DELIVERED', 'READ', 'FAILED', 'RECEIVED'],
@@ -51,6 +56,10 @@ const messageLogSchema = new mongoose.Schema(
     },
     readAt: {
       type: Date,
+    },
+    starred: {
+      type: Boolean,
+      default: false,
     },
   },
   { timestamps: true }

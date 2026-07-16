@@ -25,7 +25,7 @@ export const createCampaign = async (req, res, next) => {
       return res.status(403).json({ message: 'Bulk Scheduling is disabled for your plan. Please upgrade.' });
     }
 
-    const { name, whatsappSessionId, templateId, messageText, mediaUrl, delaySeconds, targetCriteria, scheduledAt } = req.body;
+    const { name, whatsappSessionId, templateId, messageText, mediaUrl, mediaAttachments, delaySeconds, targetCriteria, scheduledAt, buttons } = req.body;
 
     if (!name || !whatsappSessionId || !messageText) {
       return res.status(400).json({ message: 'Campaign name, WhatsApp session, and message text are required.' });
@@ -45,10 +45,12 @@ export const createCampaign = async (req, res, next) => {
       templateId: templateId || null,
       messageText: messageText || '',
       mediaUrl: mediaUrl || '',
+      mediaAttachments: mediaAttachments || [],
       delaySeconds: safeDelaySeconds,
       targetCriteria: targetCriteria || { type: 'ALL' },
       status: 'DRAFT',
       scheduledAt: scheduledAt ? new Date(scheduledAt) : new Date(),
+      buttons: buttons || [],
     });
 
     await writeAuditLog(req, {

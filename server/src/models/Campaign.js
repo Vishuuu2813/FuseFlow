@@ -27,6 +27,14 @@ const campaignSchema = new mongoose.Schema(
     mediaUrl: {
       type: String,
     },
+    mediaAttachments: [
+      {
+        url: { type: String, required: true },
+        fileType: { type: String, enum: ['image', 'video', 'document'], default: 'image' },
+        filename: { type: String, default: '' },
+        mimetype: { type: String, default: '' }
+      }
+    ],
     status: {
       type: String,
       enum: ['DRAFT', 'SCHEDULED', 'RUNNING', 'PAUSED', 'COMPLETED', 'FAILED'],
@@ -56,7 +64,15 @@ const campaignSchema = new mongoose.Schema(
       delivered: { type: Number, default: 0 },
       read: { type: Number, default: 0 },
       failed: { type: Number, default: 0 },
+      clicks: { type: Number, default: 0 },
     },
+    buttons: [
+      {
+        type: { type: String, enum: ['quick_reply', 'cta_url', 'cta_call'], default: 'quick_reply' },
+        displayText: { type: String, required: true },
+        payload: { type: String, default: '' },
+      }
+    ],
   },
   { timestamps: true }
 );

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import {
@@ -6,6 +6,7 @@ import {
   Bell,
   Building2,
   ChevronDown,
+  Clock,
   Contact,
   Database,
   FileText,
@@ -20,6 +21,7 @@ import {
   PanelLeftOpen,
   Search,
   Send,
+  Settings,
   Shield,
   Smartphone,
   Sun,
@@ -32,11 +34,15 @@ import {
   Zap
 } from 'lucide-react';
 import brandLogo from '../assets/Icon.png';
+import CommandPalette from './CommandPalette';
 
 const workspaceLinks = [
   {
     label: 'Command Center',
-    items: [{ to: '/dashboard', icon: LayoutDashboard, label: 'Overview', end: true }]
+    items: [
+      { to: '/dashboard', icon: LayoutDashboard, label: 'Overview', end: true },
+      { to: '/dashboard/analytics', icon: Activity, label: 'Analytics' }
+    ]
   },
   {
     label: 'Messaging',
@@ -44,8 +50,8 @@ const workspaceLinks = [
       { to: '/dashboard/sessions', icon: Smartphone, label: 'Connection' },
       { to: '/dashboard/live-chat', icon: MessageSquare, label: 'Live Chat' },
       { to: '/dashboard/send-message', icon: Mail, label: 'Send Message', permissionKey: 'sendMessage' },
-      { to: '/dashboard/campaigns', icon: Send, label: 'Bulk Send', gate: 'bulkScheduling', permissionKey: 'bulkScheduling' },
-      { to: '/dashboard/smart-broadcast', icon: Zap, label: 'Smart Broadcast', gate: 'bulkScheduling', permissionKey: 'smartBroadcast' },
+      { to: '/dashboard/smart-broadcast', icon: Zap, label: 'Smart Campaign', gate: 'bulkScheduling', permissionKey: 'smartBroadcast' },
+      { to: '/dashboard/templates', icon: FileText, label: 'Message Templates' },
       { to: '/dashboard/flows', icon: Workflow, label: 'Flow Builder', gate: 'flowBuilder', permissionKey: 'flowBuilder' },
       { to: '/dashboard/autoreply', icon: MessageSquare, label: 'Auto Reply', gate: 'aiAutoReply', permissionKey: 'aiAutoReply' },
       { to: '/dashboard/message-logs', icon: FileText, label: 'Message Log', permissionKey: 'messageLogs' }
@@ -66,9 +72,14 @@ const adminLinks = [
   {
     label: 'Admin Console',
     items: [
-      { to: '/dashboard/admin', icon: Shield, label: 'Admin Panel' },
+      { to: '/dashboard/admin', icon: Shield, label: 'Overview', end: true },
+      { to: '/dashboard/admin/workspaces', icon: Building2, label: 'Workspaces' },
       { to: '/dashboard/users', icon: Users, label: 'Users' },
-      { to: '/dashboard/plans', icon: Tag, label: 'Plans' }
+      { to: '/dashboard/plans', icon: Tag, label: 'Pricing Plans' },
+      { to: '/dashboard/admin/billing', icon: Tag, label: 'Admin Billing' },
+      { to: '/dashboard/admin/config', icon: Settings, label: 'Global Config' },
+      { to: '/dashboard/admin/logs', icon: Clock, label: 'Audit Logs' },
+      { to: '/dashboard/admin/security', icon: Lock, label: 'Admin Security' }
     ]
   }
 ];
@@ -142,12 +153,30 @@ const SidebarLink = ({ item, tenant, user, collapsed, onLockedClick }) => {
 };
 
 const DashboardLayout = () => {
-  const { user, tenant, logout, loading } = useAuth();
+  const { user, tenant, logout, loading, stopImpersonating } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  const [collapsed, setCollapsed] = React.useState(false);
-  const [mobileOpen, setMobileOpen] = React.useState(false);
-  const [dark, setDark] = React.useState(() => localStorage.getItem('fuseflow-theme') === 'dark');
+  const [collapsed, setCollapsed] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const [dark, setDark] = useState(() => localStorage.getItem('fuseflow-theme') !== 'light');
+  const [showCommandPalette, setShowCommandPalette] = useState(false);
+
+  const toggleCommandPalette = useCallback(() => {
+    setShowCommandPalette((prev) => !prev);
+  }, []);
+
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      // ⌘K or Ctrl+K
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault();
+        toggleCommandPalette();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [toggleCommandPalette]);
 
   const getValidityDays = () => {
     if (!tenant?.planExpiresAt) return null;
@@ -205,10 +234,24 @@ const DashboardLayout = () => {
   }
 
   return (
-    <div className={`${dark ? 'ff-dark' : ''} min-h-screen bg-[#f5f7fb] text-slate-900`}>
-      <div className="flex h-screen overflow-hidden">
+    <div className={`${dark ? 'ff-dark' : ''} min-h-screen text-slate-900 flex flex-col`} style={{ backgroundColor: 'var(--bg-base)', color: 'var(--text-primary)' }}>
+      {user?.isImpersonated && (
+        <div className="bg-amber-600 text-white px-6 py-3 flex items-center justify-between text-xs font-bold shrink-0 shadow-md">
+          <span className="flex items-center gap-2">
+            ⚠️ Impersonating workspace: <strong className="underline">{tenant?.name || 'Client Workspace'}</strong> ({user.email})
+          </span>
+          <button
+            onClick={stopImpersonating}
+            className="bg-white text-amber-700 px-3.5 py-1.5 rounded-xl font-black hover:bg-amber-50 transition cursor-pointer"
+          >
+            Return to Super Admin
+          </button>
+        </div>
+      )}
+      <div className="flex flex-1 h-0 overflow-hidden">
         <aside
-          className={`hidden shrink-0 border-r border-slate-200/80 bg-[#f9fafc]/95 px-3 py-4 shadow-[1px_0_0_rgba(15,23,42,0.02)] backdrop-blur-xl transition-all duration-300 lg:flex lg:flex-col ${
+          style={{ backgroundColor: 'var(--bg-sidebar)', borderColor: 'var(--border)' }}
+          className={`hidden shrink-0 border-r px-3 py-4 transition-all duration-300 lg:flex lg:flex-col ${
             collapsed ? 'w-[88px]' : 'w-[288px]'
           }`}
         >
@@ -246,21 +289,21 @@ const DashboardLayout = () => {
           )}
 
           {!collapsed && (
-            <div className="mt-5 rounded-2xl border border-slate-200/80 bg-white p-3 shadow-sm">
+            <div className="mt-5 rounded-2xl border p-3" style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)' }}>
               <button type="button" className="flex w-full items-center justify-between gap-3 text-left">
                 <span className="flex min-w-0 items-center gap-3">
-                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600">
+                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl" style={{ backgroundColor: 'var(--accent-soft)', color: 'var(--accent-text)' }}>
                     <Building2 size={18} />
                   </span>
                   <span className="min-w-0">
-                    <span className="block truncate text-sm font-extrabold text-slate-900">{tenant?.name || 'Admin Console'}</span>
-                    <span className="block truncate text-xs font-semibold text-slate-500">
+                    <span className="block truncate text-sm font-extrabold" style={{ color: 'var(--text-primary)' }}>{tenant?.name || 'Admin Console'}</span>
+                    <span className="block truncate text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>
                       {tenant?.plan || 'Workspace'} plan
                       {validityDays !== null && ` (${validityDays > 0 ? `${validityDays}d left` : validityDays === 0 ? 'today' : 'expired'})`}
                     </span>
                   </span>
                 </span>
-                <ChevronDown size={16} className="shrink-0 text-slate-400" />
+                <ChevronDown size={16} style={{ color: 'var(--text-muted)' }} />
               </button>
             </div>
           )}
@@ -289,27 +332,31 @@ const DashboardLayout = () => {
             ))}
           </nav>
 
-          <div className="mt-4 border-t border-slate-200/80 pt-4">
+          <div className="mt-4 border-t pt-4" style={{ borderColor: 'var(--border)' }}>
             {!collapsed && (
               <NavLink
                 to="/dashboard/profile"
-                className="mb-3 flex items-center gap-3 rounded-2xl bg-white p-3 shadow-sm ring-1 ring-slate-200/80 transition hover:ring-indigo-200"
+                className="mb-3 flex items-center gap-3 rounded-2xl border p-3 transition"
+                style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)' }}
               >
-                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-indigo-600 to-emerald-500 text-sm font-extrabold text-white">
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-indigo-600 text-sm font-extrabold text-white">
                   {user.name?.charAt(0)?.toUpperCase() || 'U'}
                 </span>
                 <span className="min-w-0">
-                  <span className="block truncate text-sm font-extrabold text-slate-900">{user.name}</span>
-                  <span className="block truncate text-xs font-semibold text-slate-500">{user.email || tenant?.name || 'Secure user'}</span>
+                  <span className="block truncate text-sm font-extrabold" style={{ color: 'var(--text-primary)' }}>{user.name}</span>
+                  <span className="block truncate text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>{user.email || tenant?.name || 'Secure user'}</span>
                 </span>
               </NavLink>
             )}
             <button
               type="button"
               onClick={logout}
-              className={`flex w-full items-center rounded-xl text-sm font-bold text-slate-500 transition hover:bg-red-50 hover:text-red-600 ${
+              className={`flex w-full items-center rounded-xl text-sm font-bold transition ${
                 collapsed ? 'justify-center p-3' : 'gap-3 px-3 py-2.5'
               }`}
+              style={{ color: 'var(--text-secondary)' }}
+              onMouseEnter={e => { e.currentTarget.style.backgroundColor = 'var(--danger-soft)'; e.currentTarget.style.color = 'var(--danger-text)'; }}
+              onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = 'var(--text-secondary)'; }}
             >
               <LogOut size={18} />
               {!collapsed && <span>Log Out</span>}
@@ -318,13 +365,14 @@ const DashboardLayout = () => {
         </aside>
 
         <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
-          <header className="sticky top-0 z-30 border-b border-slate-200/80 bg-white/90 px-4 py-3 backdrop-blur-xl sm:px-6 lg:px-8">
+          <header className="sticky top-0 z-30 border-b px-4 py-3 sm:px-6 lg:px-8" style={{ backgroundColor: 'var(--bg-header)', borderColor: 'var(--border)' }}>
             <div className="flex items-center justify-between gap-4">
               <div className="flex min-w-0 items-center gap-3">
                 <button
                   type="button"
                   onClick={() => setMobileOpen(true)}
-                  className="rounded-xl border border-slate-200 bg-white p-2 text-slate-500 shadow-sm lg:hidden"
+                  className="rounded-xl border p-2 shadow-sm lg:hidden"
+                  style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)', color: 'var(--text-secondary)' }}
                   aria-label="Open navigation"
                 >
                   <Menu size={18} />
@@ -339,23 +387,34 @@ const DashboardLayout = () => {
                 </div>
               </div>
 
-              <div className="hidden min-w-[280px] max-w-md flex-1 items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-slate-400 shadow-inner xl:flex">
-                <Search size={17} />
-                <input
-                  type="search"
-                  placeholder="Search contacts, campaigns, devices..."
-                  className="w-full bg-transparent text-sm font-medium text-slate-700 placeholder:text-slate-400 focus:outline-none"
-                />
-              </div>
+              <button
+                type="button"
+                onClick={toggleCommandPalette}
+                className="hidden min-w-[280px] max-w-md flex-1 items-center justify-between gap-2 rounded-2xl border px-3 py-2 xl:flex cursor-pointer transition-colors"
+                style={{ backgroundColor: 'var(--bg-input)', borderColor: 'var(--border)', color: 'var(--text-muted)' }}
+              >
+                <div className="flex items-center gap-2">
+                  <Search size={17} />
+                  <span className="text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>
+                    Search or type a command...
+                  </span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <span className="px-1.5 py-0.5 rounded border text-[10px] font-bold" style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>
+                    ⌘K
+                  </span>
+                </div>
+              </button>
 
               <div className="flex items-center gap-2">
-                <span className="hidden items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-extrabold text-emerald-700 sm:flex">
+                <span className="hidden items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-extrabold sm:flex" style={{ borderColor: 'var(--success-text)', backgroundColor: 'var(--success-soft)', color: 'var(--success-text)' }}>
                   <Wifi size={14} />
                   Live
                 </span>
                 <button
                   type="button"
-                  className="rounded-xl border border-slate-200 bg-white p-2.5 text-slate-500 shadow-sm transition hover:border-indigo-200 hover:text-indigo-600"
+                  className="rounded-xl border p-2.5 transition"
+                  style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)', color: 'var(--text-secondary)' }}
                   aria-label="Notifications"
                 >
                   <Bell size={18} />
@@ -363,14 +422,15 @@ const DashboardLayout = () => {
                 <button
                   type="button"
                   onClick={() => setDark((value) => !value)}
-                  className="rounded-xl border border-slate-200 bg-white p-2.5 text-slate-500 shadow-sm transition hover:border-indigo-200 hover:text-indigo-600"
-                  aria-label={dark ? 'Switch to light theme' : 'Switch to dark theme'}
+                  className="rounded-xl border p-2.5 transition"
+                  style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)', color: 'var(--text-secondary)' }}
+                  aria-label={dark ? 'Switch to light mode' : 'Switch to dark mode'}
                 >
                   {dark ? <Sun size={18} /> : <Moon size={18} />}
                 </button>
-                <div className="hidden items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2 shadow-sm sm:flex">
-                  <Activity size={16} className="text-emerald-600" />
-                  <span className="text-xs font-extrabold text-slate-700">
+                <div className="hidden items-center gap-2 rounded-2xl border px-3 py-2 sm:flex" style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)' }}>
+                  <Activity size={16} style={{ color: 'var(--success-text)' }} />
+                  <span className="text-xs font-extrabold" style={{ color: 'var(--text-primary)' }}>
                     {tenant?.plan || 'Admin'}
                     {validityDays !== null && ` (${validityDays > 0 ? `${validityDays}d left` : 'expired'})`}
                   </span>
@@ -379,7 +439,7 @@ const DashboardLayout = () => {
             </div>
           </header>
 
-          <div className="flex-1 overflow-y-auto bg-[radial-gradient(circle_at_top_left,rgba(79,70,229,0.08),transparent_30%),linear-gradient(180deg,#f8fafc_0%,#eef2f7_100%)]">
+          <div className="main-content-area flex-1 overflow-y-auto" style={{ backgroundColor: 'var(--bg-base)' }}>
             <div className="mx-auto w-full max-w-[1500px] px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
               <Outlet />
             </div>
@@ -395,7 +455,7 @@ const DashboardLayout = () => {
             aria-label="Close navigation"
             onClick={() => setMobileOpen(false)}
           />
-          <aside className="relative flex h-full w-[min(88vw,320px)] flex-col border-r border-slate-200 bg-[#f9fafc] px-4 py-4 shadow-2xl">
+          <aside className="relative flex h-full w-[min(88vw,320px)] flex-col border-r px-4 py-4 shadow-2xl" style={{ backgroundColor: 'var(--bg-sidebar)', borderColor: 'var(--border)' }}>
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <img src={brandLogo} alt="FuseFlow" className="h-10 w-10 rounded-2xl object-contain shadow-sm" />
@@ -414,14 +474,14 @@ const DashboardLayout = () => {
               </button>
             </div>
 
-            <div className="mt-5 rounded-2xl border border-slate-200/80 bg-white p-3 shadow-sm">
+            <div className="mt-5 rounded-2xl border p-3" style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)' }}>
               <div className="flex items-center gap-3">
-                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600">
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl" style={{ backgroundColor: 'var(--accent-soft)', color: 'var(--accent-text)' }}>
                   <Building2 size={18} />
                 </span>
                 <span className="min-w-0">
-                  <span className="block truncate text-sm font-extrabold text-slate-900">{tenant?.name || 'Admin Console'}</span>
-                  <span className="block truncate text-xs font-semibold text-slate-500">
+                  <span className="block truncate text-sm font-extrabold" style={{ color: 'var(--text-primary)' }}>{tenant?.name || 'Admin Console'}</span>
+                  <span className="block truncate text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>
                     {tenant?.plan || 'Workspace'} plan
                     {validityDays !== null && ` (${validityDays > 0 ? `${validityDays}d left` : validityDays === 0 ? 'today' : 'expired'})`}
                   </span>
@@ -454,7 +514,10 @@ const DashboardLayout = () => {
             <button
               type="button"
               onClick={logout}
-              className="mt-4 flex w-full items-center gap-3 rounded-xl border-t border-slate-200 px-3 py-4 text-sm font-bold text-slate-500 transition hover:bg-red-50 hover:text-red-600"
+              className="mt-4 flex w-full items-center gap-3 rounded-xl border-t px-3 py-4 text-sm font-bold transition"
+              style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)' }}
+              onMouseEnter={e => { e.currentTarget.style.backgroundColor = 'var(--danger-soft)'; e.currentTarget.style.color = 'var(--danger-text)'; }}
+              onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = 'var(--text-secondary)'; }}
             >
               <LogOut size={18} />
               <span>Log Out</span>
@@ -462,6 +525,12 @@ const DashboardLayout = () => {
           </aside>
         </div>
       )}
+      <CommandPalette
+        isOpen={showCommandPalette}
+        onClose={() => setShowCommandPalette(false)}
+        dark={dark}
+        setDark={setDark}
+      />
     </div>
   );
 };

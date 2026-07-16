@@ -5,6 +5,7 @@ import MessageTemplate from '../models/MessageTemplate.js';
 import Tenant from '../models/Tenant.js';
 import { sessions, connectToWhatsApp } from '../services/whatsapp.js';
 import { emitToTenant } from '../socket.js';
+
 import pino from 'pino';
 
 const logger = pino({
@@ -58,6 +59,24 @@ const interpolateTemplate = (text, contact) => {
     }
   }
   return parseSpintax(result);
+};
+
+const sendMediaHelper = async (sock, formattedJid, item, captionText) => {
+  const options = {};
+  const type = item.fileType || 'image';
+  if (type === 'image') {
+    options.image = { url: item.url };
+    if (captionText) options.caption = captionText;
+  } else if (type === 'video') {
+    options.video = { url: item.url };
+    if (captionText) options.caption = captionText;
+  } else if (type === 'document') {
+    options.document = { url: item.url };
+    options.fileName = item.filename || 'File';
+    if (item.mimetype) options.mimetype = item.mimetype;
+    if (captionText) options.caption = captionText;
+  }
+  return await sock.sendMessage(formattedJid, options);
 };
 
 // Core campaign executor running direct loop in-memory
@@ -191,6 +210,14 @@ export const executeCampaignLogic = async (data) => {
 
       textToSend = interpolateTemplate(textToSend, contact);
 
+      // Rewrite URLs for click-through rate (CTR) tracking
+      const urlRegex = /(https?:\/\/[^\s]+)/g;
+      const backendUrl = process.env.BACKEND_URL || `http://localhost:${process.env.PORT || 5000}`;
+      textToSend = textToSend.replace(urlRegex, (match) => {
+        if (match.includes('/track/click/')) return match;
+        return `${backendUrl}/track/click/${campaignId}?url=${encodeURIComponent(match)}`;
+      });
+
       const existingLog = await MessageLog.findOne({
         campaignId,
         phone: contact.phone,
@@ -221,22 +248,57 @@ export const executeCampaignLogic = async (data) => {
       }
 
       try {
-        const messageOptions = {};
-        
-        if (template && template.type === 'BUTTONS') {
-          messageOptions.text = textToSend;
-          if (template.footer) messageOptions.footer = template.footer;
+        let sentMsg = null;
+        if (campaign.mediaAttachments && campaign.mediaAttachments.length > 0) {
+          for (let mIdx = 0; mIdx < campaign.mediaAttachments.length; mIdx++) {
+            const item = campaign.mediaAttachments[mIdx];
+            const isFirst = mIdx === 0;
+            // Send first attachment with caption (if any), others without
+            sentMsg = await sendMediaHelper(sock, formattedJid, item, isFirst ? textToSend : '');
+            if (mIdx < campaign.mediaAttachments.length - 1) {
+              await delay(1500); // 1.5s delay between consecutive attachments
+            }
+          }
+        } else if (campaign.buttons && campaign.buttons.length > 0) {
+          // nativeFlowMessage is broken in the current Baileys/WhatsApp protocol.
+          // Append buttons as visually formatted text — works on ALL devices reliably.
+          const buttonLines = campaign.buttons.map((btn) => {
+            if (btn.type === 'cta_url') {
+              let targetUrl = btn.payload || '';
+              if (targetUrl.startsWith('http')) {
+                targetUrl = `${backendUrl}/track/click/${campaignId}?url=${encodeURIComponent(targetUrl)}`;
+              }
+              return `🔗 *${btn.displayText}*\n${targetUrl}`;
+            } else if (btn.type === 'cta_call') {
+              return `📞 *${btn.displayText}*\n${btn.payload || ''}`;
+            } else {
+              return `👉 *${btn.displayText}*`;
+            }
+          });
+
+          const fullText = `${textToSend}\n\n${buttonLines.join('\n\n')}`;
+
+          if (mediaUrl) {
+            sentMsg = await sock.sendMessage(formattedJid, {
+              image: { url: mediaUrl },
+              caption: fullText
+            });
+          } else {
+            sentMsg = await sock.sendMessage(formattedJid, { text: fullText });
+          }
+        } else if (mediaUrl) {
+          sentMsg = await sock.sendMessage(formattedJid, {
+            image: { url: mediaUrl },
+            caption: textToSend
+          });
         } else {
-          messageOptions.text = textToSend;
+          const options = { text: textToSend };
+          if (template && template.type === 'BUTTONS') {
+            if (template.footer) options.footer = template.footer;
+          }
+          sentMsg = await sock.sendMessage(formattedJid, options);
         }
 
-        if (mediaUrl) {
-          messageOptions.image = { url: mediaUrl };
-          messageOptions.caption = textToSend;
-          delete messageOptions.text;
-        }
-
-        const sentMsg = await sock.sendMessage(formattedJid, messageOptions);
         sentCount++;
         
         const savedLog = await MessageLog.create({
@@ -245,10 +307,10 @@ export const executeCampaignLogic = async (data) => {
           whatsappSessionId,
           phone: contact.phone,
           messageText: textToSend,
-          mediaUrl,
+          mediaUrl: campaign.mediaAttachments?.[0]?.url || mediaUrl || '',
           status: 'SENT',
           direction: 'OUTGOING',
-          messageId: sentMsg.key.id,
+          messageId: sentMsg?.key?.id,
           sentAt: new Date(),
         });
         emitToTenant(tenantId, 'chat-message', savedLog);
@@ -265,7 +327,7 @@ export const executeCampaignLogic = async (data) => {
           whatsappSessionId,
           phone: contact.phone,
           messageText: textToSend,
-          mediaUrl,
+          mediaUrl: campaign.mediaAttachments?.[0]?.url || mediaUrl || '',
           status: 'FAILED',
           errorReason: error.message,
         });
@@ -281,6 +343,7 @@ export const executeCampaignLogic = async (data) => {
           total: contacts.length,
           sent: sentCount,
           failed: failedCount,
+          clicks: campaign.stats.clicks || 0,
         },
         status: 'RUNNING',
       });
@@ -304,6 +367,7 @@ export const executeCampaignLogic = async (data) => {
         total: contacts.length,
         sent: sentCount,
         failed: failedCount,
+        clicks: campaign.stats.clicks || 0,
       },
       status: 'COMPLETED',
     });

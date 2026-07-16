@@ -37,12 +37,12 @@ const getDatetimeString = (dateVal) => {
 
 const getAvatarColor = (name) => {
   const colors = [
-    'from-violet-500 to-indigo-500',
-    'from-cyan-500 to-blue-500',
-    'from-emerald-500 to-teal-500',
-    'from-amber-500 to-orange-500',
-    'from-rose-500 to-pink-500',
-    'from-purple-500 to-fuchsia-500'
+    'bg-indigo-600',
+    'bg-blue-600',
+    'bg-emerald-600',
+    'bg-amber-600',
+    'bg-rose-600',
+    'bg-purple-600'
   ];
   const idx = (name || '').charCodeAt(0) % colors.length;
   return colors[isNaN(idx) ? 0 : idx];
@@ -1327,7 +1327,7 @@ const WorkspaceUsers = () => {
                     <tr key={member._id} className="text-slate-700 hover:bg-slate-50/40 transition-colors group">
                       <td className="py-4">
                         <div className="flex items-center gap-3">
-                          <div className={`w-10 h-10 rounded-2xl bg-gradient-to-br ${avatarColor} text-white flex items-center justify-center font-black text-sm shadow-sm`}>
+                          <div className={`w-10 h-10 rounded-2xl ${avatarColor} text-white flex items-center justify-center font-black text-sm shadow-sm`}>
                             {initial}
                           </div>
                           <div>

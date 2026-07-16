@@ -46,6 +46,16 @@ const messageTemplateSchema = new mongoose.Schema(
     mediaUrl: {
       type: String,
     },
+    keywords: {
+      type: [String],
+      default: []
+    },
+    accuracy: {
+      type: Number,
+      default: 80,
+      min: 50,
+      max: 100
+    }
   },
   { timestamps: true }
 );

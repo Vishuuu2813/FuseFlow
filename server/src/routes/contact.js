@@ -5,7 +5,19 @@ import {
   createContact,
   updateContact,
   deleteContact,
-  importContacts
+  importContacts,
+  bulkEditContacts,
+  bulkDeleteContacts,
+  getDuplicates,
+  mergeContacts,
+  getLists,
+  createList,
+  deleteList,
+  manageListContacts,
+  getSegments,
+  createSegment,
+  deleteSegment,
+  getSegmentContacts
 } from '../controllers/contact.js';
 import { authenticate } from '../middleware/auth.js';
 import { requireTenant } from '../middleware/tenant.js';
@@ -38,5 +50,25 @@ router.post('/', createContact);
 router.put('/:id', updateContact);
 router.delete('/:id', deleteContact);
 router.post('/import', upload.single('file'), importContacts);
+
+// CRM Enhancements - Bulk Operations
+router.post('/bulk-edit', bulkEditContacts);
+router.post('/bulk-delete', bulkDeleteContacts);
+
+// CRM Enhancements - Duplicates & Merges
+router.get('/duplicates', getDuplicates);
+router.post('/merge', mergeContacts);
+
+// CRM Enhancements - Lists
+router.get('/lists', getLists);
+router.post('/lists', createList);
+router.delete('/lists/:id', deleteList);
+router.post('/lists/:id/contacts', manageListContacts);
+
+// CRM Enhancements - Segments
+router.get('/segments', getSegments);
+router.post('/segments', createSegment);
+router.delete('/segments/:id', deleteSegment);
+router.get('/segments/:id/contacts', getSegmentContacts);
 
 export default router;

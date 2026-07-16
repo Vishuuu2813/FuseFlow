@@ -1,8 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import api from '../services/api';
-import { Layers, Settings, Search, Edit3 } from 'lucide-react';
+import { Layers, Settings, Search, Edit3, UserCheck } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
 
 const AdminTenants = () => {
+  const { impersonate } = useAuth();
   const [tenants, setTenants] = useState([]);
   const [plans, setPlans] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -83,6 +85,19 @@ const AdminTenants = () => {
     }
   };
 
+  const handleImpersonate = async (tenantId) => {
+    if (!window.confirm('Are you sure you want to impersonate this workspace? You will be logged in as their administrator.')) return;
+    try {
+      setError('');
+      setSuccess('');
+      const { data } = await api.post(`/admin/tenants/${tenantId}/impersonate`);
+      await impersonate(data.accessToken, data.user);
+      window.location.href = '/dashboard';
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to impersonate tenant.');
+    }
+  };
+
   const filteredTenants = tenants.filter(
     (t) =>
       t.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -150,16 +165,24 @@ const AdminTenants = () => {
                   <td className="py-4 font-semibold text-slate-600">{t.limits?.maxMessagesPerMonth || 500} / mo</td>
                   <td className="py-4 font-semibold text-slate-600">{t.limits?.maxAiCredits || 50} Credits</td>
                   <td className="py-4 text-right">
-                    <button
-                      onClick={() => {
-                        setAssigningTenant(t);
-                        setSelectedPlanId('');
-                        setCustomLimitsEnabled(false);
-                      }}
-                      className="px-3.5 py-1.5 rounded-lg bg-slate-100 hover:bg-emerald-50 hover:text-emerald-700 border border-slate-200 hover:border-emerald-250 font-bold text-xs flex items-center gap-1.5 ml-auto cursor-pointer transition-colors"
-                    >
-                      <Settings size={13} /> Change Plan
-                    </button>
+                    <div className="flex justify-end gap-2">
+                      <button
+                        onClick={() => handleImpersonate(t._id)}
+                        className="px-3 py-1.5 rounded-lg bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-105 hover:text-indigo-800 font-bold text-xs flex items-center gap-1.5 cursor-pointer transition-colors"
+                      >
+                        <UserCheck size={13} /> Impersonate
+                      </button>
+                      <button
+                        onClick={() => {
+                          setAssigningTenant(t);
+                          setSelectedPlanId('');
+                          setCustomLimitsEnabled(false);
+                        }}
+                        className="px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-emerald-50 hover:text-emerald-700 border border-slate-200 hover:border-emerald-250 font-bold text-xs flex items-center gap-1.5 cursor-pointer transition-colors"
+                      >
+                        <Settings size={13} /> Change Plan
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}

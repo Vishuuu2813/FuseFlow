@@ -58,23 +58,43 @@
 
   --color-brand-50: #f0fdf4;
   --color-brand-100: #dcfce7;
-  --color-brand-500: #128c7e; /* WhatsApp Teal-Green */
-  --color-brand-600: #075e54; /* WhatsApp Dark-Green */
+  --color-brand-500: #128c7e;
+  --color-brand-600: #075e54;
   --color-brand-700: #054c44;
-  
+
   --color-glass-bg: rgba(255, 255, 255, 0.85);
   --color-glass-border: rgba(0, 0, 0, 0.08);
 }
 
+/* ─── Light Mode ─────────────────────────────────────────── */
 :root {
   color-scheme: light;
+  --bg-base:         #f5f7fb;
+  --bg-sidebar:      #f9fafc;
+  --bg-header:       #ffffff;
+  --bg-card:         #ffffff;
+  --bg-card-hover:   #f8faff;
+  --bg-input:        #f8fafc;
+  --border:          #e2e8f0;
+  --border-subtle:   #f1f5f9;
+  --text-primary:    #0f172a;
+  --text-secondary:  #475569;
+  --text-muted:      #94a3b8;
+  --text-inverse:    #ffffff;
+  --accent:          #4338ca;
+  --accent-soft:     #eef2ff;
+  --accent-text:     #4338ca;
+  --danger-soft:     #fff1f2;
+  --danger-text:     #be123c;
+  --success-soft:    #f0fdf4;
+  --success-text:    #15803d;
 }
 
 body {
   margin: 0;
   font-family: var(--font-sans);
-  background-color: #f6f7fb;
-  color: #0f172a; /* slate-900 */
+  background-color: var(--bg-base);
+  color: var(--text-primary);
   min-height: 100vh;
   overflow-x: hidden;
   text-rendering: optimizeLegibility;
@@ -82,48 +102,179 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
-button,
-a,
-input,
-select,
-textarea {
-  font: inherit;
-}
+button, a, input, select, textarea { font: inherit; }
+button, a { -webkit-tap-highlight-color: transparent; }
 
-button,
-a {
-  -webkit-tap-highlight-color: transparent;
-}
-
+/* ─── Dark Mode ──────────────────────────────────────────── */
 .ff-dark {
   color-scheme: dark;
+  --bg-base:         #0d1117;
+  --bg-sidebar:      #0d1117;
+  --bg-header:       #161b22;
+  --bg-card:         #161b22;
+  --bg-card-hover:   #1c2330;
+  --bg-input:        #1c2330;
+  --border:          #21262d;
+  --border-subtle:   #30363d;
+  --text-primary:    #e6edf3;
+  --text-secondary:  #8b949e;
+  --text-muted:      #484f58;
+  --text-inverse:    #0d1117;
+  --accent:          #6366f1;
+  --accent-soft:     #1e1f3a;
+  --accent-text:     #818cf8;
+  --danger-soft:     #1a0a0a;
+  --danger-text:     #f87171;
+  --success-soft:    #0a1a0f;
+  --success-text:    #4ade80;
 }
 
-.ff-dark main header {
-  background: rgba(15, 23, 42, 0.92);
-  border-color: rgba(51, 65, 85, 0.9);
+/* Apply CSS vars to root wrapper */
+.ff-dark body,
+.ff-dark {
+  background-color: var(--bg-base);
+  color: var(--text-primary);
 }
 
-.ff-dark main > div {
-  background: radial-gradient(circle at top left, rgba(79, 70, 229, 0.18), transparent 30%),
-    linear-gradient(180deg, #0f172a 0%, #111827 100%);
+/* Scrollbar */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: var(--border-subtle); }
+
+/* ─── Dark Mode Component Overrides ─────────────────────── */
+
+/* Sidebar */
+.ff-dark aside {
+  background-color: var(--bg-sidebar) !important;
+  border-color: var(--border) !important;
 }
 
-/* Scrollbar styling */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+/* Header */
+.ff-dark header {
+  background-color: var(--bg-header) !important;
+  border-color: var(--border) !important;
 }
 
-::-webkit-scrollbar-track {
-  background: rgba(0, 0, 0, 0.02);
+/* Main content area */
+.ff-dark .main-content-area {
+  background-color: var(--bg-base) !important;
 }
 
-::-webkit-scrollbar-thumb {
-  background: rgba(0, 0, 0, 0.12);
-  border-radius: 3px;
+/* Cards */
+.ff-dark .card,
+.ff-dark [class*="bg-white"] {
+  background-color: var(--bg-card) !important;
+  border-color: var(--border) !important;
 }
 
-::-webkit-scrollbar-thumb:hover {
-  background: rgba(0, 0, 0, 0.25);
+/* Inputs */
+.ff-dark input,
+.ff-dark select,
+.ff-dark textarea {
+  background-color: var(--bg-input) !important;
+  border-color: var(--border) !important;
+  color: var(--text-primary) !important;
+}
+
+.ff-dark input::placeholder,
+.ff-dark textarea::placeholder {
+  color: var(--text-muted) !important;
+}
+
+/* Tables */
+.ff-dark table thead tr {
+  border-color: var(--border) !important;
+}
+.ff-dark table tbody tr {
+  border-color: var(--border-subtle) !important;
+}
+.ff-dark table tbody tr:hover {
+  background-color: var(--bg-card-hover) !important;
+}
+
+/* Text overrides */
+.ff-dark [class*="text-slate-900"],
+.ff-dark [class*="text-slate-950"],
+.ff-dark [class*="text-slate-850"],
+.ff-dark [class*="text-slate-800"] {
+  color: var(--text-primary) !important;
+}
+.ff-dark [class*="text-slate-600"],
+.ff-dark [class*="text-slate-700"],
+.ff-dark [class*="text-slate-500"] {
+  color: var(--text-secondary) !important;
+}
+.ff-dark [class*="text-slate-400"],
+.ff-dark [class*="text-slate-300"] {
+  color: var(--text-muted) !important;
+}
+
+/* Border overrides */
+.ff-dark [class*="border-slate-100"],
+.ff-dark [class*="border-slate-200"],
+.ff-dark [class*="border-slate-200/80"] {
+  border-color: var(--border) !important;
+}
+
+/* Background overrides */
+.ff-dark [class*="bg-slate-50"],
+.ff-dark [class*="bg-slate-100"] {
+  background-color: var(--bg-card-hover) !important;
+}
+
+/* Active nav link in dark */
+.ff-dark .bg-white.text-indigo-700.shadow-sm {
+  background-color: var(--accent-soft) !important;
+  color: var(--accent-text) !important;
+}
+
+/* Modals / overlays */
+.ff-dark .modal-panel {
+  background-color: var(--bg-card) !important;
+  border-color: var(--border) !important;
+}
+
+/* Badges / pills with soft backgrounds */
+.ff-dark [class*="bg-indigo-50"] { background-color: var(--accent-soft) !important; }
+.ff-dark [class*="bg-emerald-50"] { background-color: var(--success-soft) !important; }
+.ff-dark [class*="bg-red-50"] { background-color: var(--danger-soft) !important; }
+.ff-dark [class*="bg-amber-50"] { background-color: #1a1200 !important; }
+.ff-dark [class*="bg-purple-50"] { background-color: #120a1a !important; }
+.ff-dark [class*="bg-violet-50"] { background-color: #110a1a !important; }
+.ff-dark [class*="bg-blue-50"] { background-color: #0a1020 !important; }
+
+/* Range input — custom thumb styling for all browsers */
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #059669;
+  cursor: pointer;
+  border: 2px solid #fff;
+  box-shadow: 0 0 0 2px #05966940;
+  transition: box-shadow 0.15s;
+}
+input[type="range"]::-webkit-slider-thumb:hover {
+  box-shadow: 0 0 0 4px #05966930;
+}
+input[type="range"]::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #059669;
+  cursor: pointer;
+  border: 2px solid #fff;
+  box-shadow: 0 0 0 2px #05966940;
+}
+input[type="range"]::-webkit-slider-runnable-track {
+  height: 8px;
+  border-radius: 9999px;
+}
+input[type="range"]::-moz-range-track {
+  height: 8px;
+  border-radius: 9999px;
+  background: #e2e8f0;
 }

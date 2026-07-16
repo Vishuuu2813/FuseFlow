@@ -72,6 +72,21 @@ export const initIO = (server) => {
       }
     });
 
+    // Typing indicator events
+    socket.on('typing-start', (data) => {
+      const { tenantId, phone } = data;
+      if (tenantId) {
+        socket.to(tenantId.toString()).emit('typing-start', { phone });
+      }
+    });
+
+    socket.on('typing-stop', (data) => {
+      const { tenantId, phone } = data;
+      if (tenantId) {
+        socket.to(tenantId.toString()).emit('typing-stop', { phone });
+      }
+    });
+
     socket.on('disconnect', () => {
       logger.info(`Socket disconnected: ${socket.id}`);
     });

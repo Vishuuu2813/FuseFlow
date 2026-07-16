@@ -13,6 +13,7 @@ const router = express.Router();
 router.get('/contacts', authenticate, requireTenant, async (req, res, next) => {
   try {
     const tenantId = req.tenantId;
+    const { includeArchived = 'false' } = req.query;
 
     // Use aggregation to group by phone, get the last message and timestamp
     const activeChats = await MessageLog.aggregate([
@@ -28,11 +29,10 @@ router.get('/contacts', authenticate, requireTenant, async (req, res, next) => {
           sessionId: { $first: '$whatsappSessionId' },
         },
       },
-      { $sort: { lastMessageAt: -1 } },
     ]);
 
     // Populate contact details if they exist in Contact model
-    const populatedChats = await Promise.all(
+    let populatedChats = await Promise.all(
       activeChats.map(async (chat) => {
         const contact = await Contact.findOne({ tenantId, phone: chat._id });
         return {
@@ -40,14 +40,36 @@ router.get('/contacts', authenticate, requireTenant, async (req, res, next) => {
           name: contact ? contact.name : 'Unknown Contact',
           stage: contact ? contact.stage : 'lead',
           tags: contact ? contact.tags : [],
+          labels: contact ? contact.labels : [],
           lastMessage: chat.lastMessage,
           lastMessageAt: chat.lastMessageAt,
           lastDirection: chat.lastDirection,
           lastStatus: chat.lastStatus,
           sessionId: chat.sessionId,
+          isPinned: contact ? contact.isPinned : false,
+          isArchived: contact ? contact.isArchived : false,
+          isMuted: contact ? contact.isMuted : false,
+          mutedUntil: contact ? contact.mutedUntil : null,
+          assignedAgentId: contact ? contact.assignedAgentId : null,
         };
       })
     );
+
+    // Filter chats based on includeArchived
+    if (includeArchived === 'true') {
+      populatedChats = populatedChats.filter(chat => chat.isArchived);
+    } else {
+      populatedChats = populatedChats.filter(chat => !chat.isArchived);
+    }
+
+    // Sort: active tab sorts pinned first; archived tab sorts by time only
+    populatedChats.sort((a, b) => {
+      if (includeArchived !== 'true') {
+        if (a.isPinned && !b.isPinned) return -1;
+        if (!a.isPinned && b.isPinned) return 1;
+      }
+      return new Date(b.lastMessageAt) - new Date(a.lastMessageAt);
+    });
 
     res.json(populatedChats);
   } catch (error) {
@@ -75,7 +97,7 @@ router.get('/messages/:phone', authenticate, requireTenant, async (req, res, nex
 router.post('/send', authenticate, requireTenant, async (req, res, next) => {
   try {
     const tenantId = req.tenantId;
-    const { phone, messageText, mediaUrl } = req.body;
+    const { phone, messageText, mediaUrl, mediaType } = req.body;
 
     if (!phone || !messageText) {
       return res.status(400).json({ message: 'Phone number and message text are required.' });
@@ -135,6 +157,7 @@ router.post('/send', authenticate, requireTenant, async (req, res, next) => {
       phone: cleanPhone,
       messageText,
       mediaUrl,
+      mediaType: mediaType || (mediaUrl ? 'image' : 'text'),
       status: 'SENT',
       direction: 'OUTGOING',
       messageId: sentMsgId,
@@ -155,6 +178,29 @@ router.post('/send', authenticate, requireTenant, async (req, res, next) => {
     }
 
     res.json(savedLog);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// 4. Star/Unstar a message
+router.put('/message/:messageId/star', authenticate, requireTenant, async (req, res, next) => {
+  try {
+    const { messageId } = req.params;
+    const { starred } = req.body;
+    const tenantId = req.tenantId;
+
+    const message = await MessageLog.findOne({ _id: messageId, tenantId });
+    if (!message) {
+      return res.status(404).json({ message: 'Message not found' });
+    }
+
+    message.starred = starred;
+    await message.save();
+
+    emitToTenant(tenantId, 'message-updated', message);
+
+    res.json(message);
   } catch (error) {
     next(error);
   }
