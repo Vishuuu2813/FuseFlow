@@ -10,15 +10,12 @@ import {
   Workflow,
   FileText,
   Contact,
-  Database,
   User,
-  Tag,
-  Shield,
-  Users,
-  Settings,
+  BarChart3,
   X,
   Moon,
-  Sun
+  Sun,
+  Sparkles
 } from 'lucide-react';
 
 const commandGroups = [
@@ -26,10 +23,11 @@ const commandGroups = [
     label: 'Navigation',
     commands: [
       { id: 'dashboard', name: 'Go to Overview', icon: MessageSquare, action: '/dashboard' },
+      { id: 'analytics', name: 'Open Analytics', icon: BarChart3, action: '/dashboard/analytics' },
       { id: 'live-chat', name: 'Go to Live Chat', icon: MessageSquare, action: '/dashboard/live-chat' },
       { id: 'sessions', name: 'Go to WhatsApp Sessions', icon: Smartphone, action: '/dashboard/sessions' },
       { id: 'send-message', name: 'Go to Send Message', icon: Send, action: '/dashboard/send-message' },
-      { id: 'campaigns', name: 'Go to Campaigns', icon: Zap, action: '/dashboard/campaigns' },
+      { id: 'campaigns', name: 'Go to Campaigns', icon: Zap, action: '/dashboard/smart-broadcast' },
       { id: 'contacts', name: 'Go to CRM Contacts', icon: Contact, action: '/dashboard/contacts' },
       { id: 'flows', name: 'Go to Flow Builder', icon: Workflow, action: '/dashboard/flows' },
       { id: 'message-logs', name: 'Go to Message Logs', icon: FileText, action: '/dashboard/message-logs' },
@@ -59,17 +57,21 @@ const CommandPalette = ({ isOpen, onClose, dark, setDark }) => {
   }, [isOpen]);
 
   const handleKeyDown = (e) => {
+    const commands = getFilteredCommands();
     if (e.key === 'Escape') {
       onClose();
     } else if (e.key === 'ArrowDown') {
       e.preventDefault();
-      setSelectedIndex((prev) => (prev + 1) % getFilteredCommands().length);
+      if (commands.length > 0) {
+        setSelectedIndex((prev) => (prev + 1) % commands.length);
+      }
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
-      setSelectedIndex((prev) => (prev - 1 + getFilteredCommands().length) % getFilteredCommands().length);
+      if (commands.length > 0) {
+        setSelectedIndex((prev) => (prev - 1 + commands.length) % commands.length);
+      }
     } else if (e.key === 'Enter') {
       e.preventDefault();
-      const commands = getFilteredCommands();
       if (commands[selectedIndex]) {
         handleCommandSelect(commands[selectedIndex]);
       }
@@ -100,17 +102,17 @@ const CommandPalette = ({ isOpen, onClose, dark, setDark }) => {
   const filteredCommands = getFilteredCommands();
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center pt-20">
+    <div className="fixed inset-0 z-50 flex items-start justify-center px-4 pt-20">
       {/* Backdrop */}
       <div
-        className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+        className="absolute inset-0 bg-slate-950/45 backdrop-blur-sm"
         onClick={onClose}
       />
       {/* Modal */}
-      <div className="relative z-10 w-full max-w-2xl bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-2xl overflow-hidden">
-        <div className="p-4 border-b border-slate-200 dark:border-slate-700">
-          <div className="flex items-center gap-3 bg-slate-100 dark:bg-slate-700 rounded-xl px-4 py-3">
-            <Search className="text-slate-400 dark:text-slate-500" size={18} />
+      <div className="relative z-10 w-full max-w-2xl overflow-hidden rounded-[24px] border shadow-2xl" style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)' }}>
+        <div className="border-b p-4" style={{ borderColor: 'var(--border)' }}>
+          <div className="flex items-center gap-3 rounded-2xl border px-4 py-3" style={{ backgroundColor: 'var(--bg-input)', borderColor: 'var(--border)' }}>
+            <Search style={{ color: 'var(--text-muted)' }} size={18} />
             <input
               ref={inputRef}
               type="text"
@@ -118,19 +120,22 @@ const CommandPalette = ({ isOpen, onClose, dark, setDark }) => {
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={handleKeyDown}
-              className="flex-1 bg-transparent text-slate-800 dark:text-white focus:outline-none placeholder-slate-400 dark:placeholder-slate-500"
+              className="flex-1 bg-transparent text-sm font-semibold focus:outline-none"
+              style={{ color: 'var(--text-primary)' }}
             />
             <button
               type="button"
               onClick={onClose}
-              className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600"
+              className="rounded-lg p-1.5 transition hover:bg-slate-500/10"
+              style={{ color: 'var(--text-muted)' }}
+              aria-label="Close command palette"
             >
               <X size={16} />
             </button>
           </div>
         </div>
         {filteredCommands.length > 0 ? (
-          <div className="p-2 max-h-80 overflow-y-auto">
+          <div className="max-h-80 overflow-y-auto p-2">
             {commandGroups.map((group) => {
               const groupCommands = filteredCommands.filter(
                 (cmd) => cmd.group === group.label
@@ -139,7 +144,7 @@ const CommandPalette = ({ isOpen, onClose, dark, setDark }) => {
 
               return (
                 <div key={group.label} className="mb-2">
-                  <div className="px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+                  <div className="px-3 py-2 text-[10px] font-black uppercase tracking-[0.14em]" style={{ color: 'var(--text-muted)' }}>
                     {group.label}
                   </div>
                   {groupCommands.map((cmd, idx) => {
@@ -152,9 +157,10 @@ const CommandPalette = ({ isOpen, onClose, dark, setDark }) => {
                         onClick={() => handleCommandSelect(cmd)}
                         className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition-colors ${
                           isSelected
-                            ? 'bg-indigo-50 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300'
-                            : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'
+                            ? 'bg-indigo-50 text-indigo-700'
+                            : 'hover:bg-slate-500/10'
                         }`}
+                        style={!isSelected ? { color: 'var(--text-secondary)' } : undefined}
                       >
                         <Icon
                           size={16}
@@ -173,8 +179,10 @@ const CommandPalette = ({ isOpen, onClose, dark, setDark }) => {
             })}
           </div>
         ) : (
-          <div className="p-8 text-center text-slate-500 dark:text-slate-400">
-            No results found for "{query}"
+          <div className="p-10 text-center">
+            <Sparkles className="mx-auto mb-3 opacity-40" size={28} style={{ color: 'var(--accent-text)' }} />
+            <p className="text-sm font-extrabold" style={{ color: 'var(--text-primary)' }}>No matching command</p>
+            <p className="mt-1 text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>Try a page name like chat, contacts, campaign, or settings.</p>
           </div>
         )}
       </div>

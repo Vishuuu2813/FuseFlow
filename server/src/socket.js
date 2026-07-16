@@ -14,7 +14,10 @@ const logger = pino({
 let io = null;
 const JWT_SECRET = process.env.JWT_SECRET || 'super_secret_jwt_access_key_whatsflow_2026';
 
-const allowedOrigins = (process.env.CLIENT_ORIGINS || process.env.CLIENT_URL || 'http://localhost:5173,http://127.0.0.1:5173')
+const allowedOrigins = (
+  process.env.CLIENT_ORIGINS ||
+  'http://localhost:5173,http://127.0.0.1:5173,https://splendorous-concha-a6cb6b.netlify.app'
+)
   .split(',')
   .map((origin) => origin.trim())
   .filter(Boolean);

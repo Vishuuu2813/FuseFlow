@@ -12,6 +12,79 @@ import {
 } from 'lucide-react';
 import brandLogo from '../assets/Icon.png';
 
+const HeroPreview = () => (
+  <div className="mt-14 w-full max-w-5xl overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-2xl shadow-emerald-900/10">
+    <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50 px-5 py-3">
+      <div className="flex items-center gap-2">
+        <span className="h-2.5 w-2.5 rounded-full bg-red-400" />
+        <span className="h-2.5 w-2.5 rounded-full bg-amber-400" />
+        <span className="h-2.5 w-2.5 rounded-full bg-emerald-400" />
+      </div>
+      <span className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">FuseFlow Command Center</span>
+    </div>
+    <div className="grid gap-0 lg:grid-cols-[220px_1fr]">
+      <aside className="hidden border-r border-slate-100 bg-slate-950 p-4 text-left text-white lg:block">
+        <div className="mb-5 flex items-center gap-2">
+          <img src={brandLogo} alt="" className="h-8 w-8 rounded-xl" />
+          <span className="text-sm font-black">FuseFlow</span>
+        </div>
+        {['Overview', 'Live Chat', 'Smart Campaign', 'CRM Contacts', 'Analytics'].map((item, index) => (
+          <div key={item} className={`mb-1 rounded-xl px-3 py-2 text-xs font-bold ${index === 0 ? 'bg-emerald-500 text-slate-950' : 'text-slate-400'}`}>
+            {item}
+          </div>
+        ))}
+      </aside>
+      <div className="bg-[#f6f8f7] p-5 text-left">
+        <div className="mb-5 flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-[0.16em] text-emerald-700">Workspace health</p>
+            <h2 className="font-display text-xl font-black text-slate-950">Messages, campaigns, and AI replies in one view</h2>
+          </div>
+          <span className="w-fit rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-[10px] font-black uppercase text-emerald-700">Live</span>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-4">
+          {[
+            ['Connected', '3/3'],
+            ['Delivered', '98.4%'],
+            ['AI replies', '1,284'],
+            ['Queue', '42']
+          ].map(([label, value]) => (
+            <div key={label} className="rounded-2xl border border-slate-200 bg-white p-4">
+              <p className="text-[10px] font-black uppercase text-slate-400">{label}</p>
+              <p className="mt-2 text-2xl font-black text-slate-900">{value}</p>
+            </div>
+          ))}
+        </div>
+        <div className="mt-3 grid gap-3 lg:grid-cols-[1.25fr_0.75fr]">
+          <div className="rounded-2xl border border-slate-200 bg-white p-4">
+            <div className="mb-4 flex items-center justify-between">
+              <span className="text-xs font-black text-slate-800">Campaign delivery</span>
+              <span className="text-[10px] font-bold text-emerald-700">Last 7 days</span>
+            </div>
+            <div className="flex h-36 items-end gap-2">
+              {[38, 52, 44, 72, 86, 62, 94].map((height, index) => (
+                <span key={index} className="flex-1 rounded-t-xl bg-emerald-500/80" style={{ height: `${height}%` }} />
+              ))}
+            </div>
+          </div>
+          <div className="rounded-2xl border border-slate-200 bg-white p-4">
+            <span className="text-xs font-black text-slate-800">Recent chats</span>
+            {['Order update', 'Pricing question', 'Demo booked'].map((item, index) => (
+              <div key={item} className="mt-3 flex items-center gap-2">
+                <span className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-50 text-[10px] font-black text-emerald-700">{index + 1}</span>
+                <div className="min-w-0">
+                  <p className="truncate text-xs font-bold text-slate-800">{item}</p>
+                  <p className="text-[10px] font-semibold text-slate-400">AI assisted</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+);
+
 const LandingPage = () => {
   const features = [
     {
@@ -118,7 +191,7 @@ const LandingPage = () => {
       </nav>
 
       {/* Hero Section */}
-      <section className="relative z-10 max-w-7xl mx-auto px-6 pt-24 pb-20 text-center flex flex-col items-center">
+      <section className="relative z-10 max-w-7xl mx-auto px-6 pt-20 pb-14 text-center flex flex-col items-center">
         <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full border border-indigo-200 bg-indigo-50 text-indigo-700 text-xs font-bold mb-6">
           <Sparkles size={12} /> WhatsApp Automation Redefined
         </div>
@@ -140,6 +213,7 @@ const LandingPage = () => {
             Go to Dashboard <ChevronRight size={18} />
           </Link>
         </div>
+        <HeroPreview />
       </section>
 
       {/* Features Grid */}

@@ -29,7 +29,12 @@ import {
   Mic,
   MoreVertical,
   Inbox,
-  FileText
+  FileText,
+  Bot,
+  Sparkles,
+  BarChart3,
+  PanelRightOpen,
+  ShieldCheck
 } from 'lucide-react';
 
 const LiveChat = () => {
@@ -559,6 +564,21 @@ const LiveChat = () => {
       default: return 'bg-slate-50 text-slate-500 border-slate-200';
     }
   };
+
+  const liveStats = {
+    total: chats.length,
+    filtered: filteredChats.length,
+    pinned: chats.filter(c => c.isPinned).length,
+    muted: chats.filter(c => c.isMuted).length,
+    inbound: chats.filter(c => c.lastDirection === 'INCOMING').length
+  };
+
+  const selectedName = selectedChat ? getDisplayName(selectedChat.name, selectedChat.phone) : '';
+  const selectedInitials = selectedName ? selectedName.replace('+', '').slice(0, 2).toUpperCase() : 'FF';
+  const currentStage = contactDetails?.stage || selectedChat?.stage || 'lead';
+  const aiBrief = contactDetails
+    ? `Lead ${contactDetails.leadScore || 0}/100 · Customer ${contactDetails.customerScore || 0}/100 · ${contactDetails.tags?.length || 0} tags`
+    : 'Select a conversation to load AI-ready customer context';
 
   const S = {
     panel: { backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)' },

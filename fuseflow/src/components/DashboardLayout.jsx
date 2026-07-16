@@ -109,7 +109,7 @@ const SidebarLink = ({ item, tenant, user, collapsed, onLockedClick }) => {
         type="button"
         onClick={() => onLockedClick(lockType)}
         title={collapsed ? item.label : undefined}
-        className={`group flex w-full items-center rounded-xl text-sm font-semibold text-slate-400 transition-all duration-200 hover:bg-slate-105/80 ${
+        className={`group flex w-full items-center rounded-xl text-sm font-semibold text-slate-400 transition-all duration-200 hover:bg-slate-500/5 ${
           collapsed ? 'justify-center px-0 py-3' : 'justify-between px-3 py-2.5'
         }`}
       >
@@ -234,7 +234,7 @@ const DashboardLayout = () => {
   }
 
   return (
-    <div className={`${dark ? 'ff-dark' : ''} min-h-screen text-slate-900 flex flex-col`} style={{ backgroundColor: 'var(--bg-base)', color: 'var(--text-primary)' }}>
+    <div className={`${dark ? 'ff-dark' : ''} ff-shell min-h-screen text-slate-900 flex flex-col`} style={{ backgroundColor: 'var(--bg-base)', color: 'var(--text-primary)' }}>
       {user?.isImpersonated && (
         <div className="bg-amber-600 text-white px-6 py-3 flex items-center justify-between text-xs font-bold shrink-0 shadow-md">
           <span className="flex items-center gap-2">
@@ -251,7 +251,7 @@ const DashboardLayout = () => {
       <div className="flex flex-1 h-0 overflow-hidden">
         <aside
           style={{ backgroundColor: 'var(--bg-sidebar)', borderColor: 'var(--border)' }}
-          className={`hidden shrink-0 border-r px-3 py-4 transition-all duration-300 lg:flex lg:flex-col ${
+          className={`hidden shrink-0 border-r px-3 py-4 backdrop-blur-xl transition-all duration-300 lg:flex lg:flex-col ${
             collapsed ? 'w-[88px]' : 'w-[288px]'
           }`}
         >
@@ -261,7 +261,7 @@ const DashboardLayout = () => {
               {!collapsed && (
                 <div className="min-w-0">
                   <h1 className="font-display text-xl font-extrabold tracking-tight text-slate-950">FuseFlow</h1>
-                  <p className="text-[10px] font-extrabold uppercase tracking-[0.22em] text-indigo-500">Automation OS</p>
+                  <p className="text-[10px] font-extrabold uppercase tracking-[0.22em] text-indigo-500">Messaging OS</p>
                 </div>
               )}
             </div>
@@ -365,7 +365,7 @@ const DashboardLayout = () => {
         </aside>
 
         <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
-          <header className="sticky top-0 z-30 border-b px-4 py-3 sm:px-6 lg:px-8" style={{ backgroundColor: 'var(--bg-header)', borderColor: 'var(--border)' }}>
+          <header className="sticky top-0 z-30 border-b px-4 py-3 backdrop-blur-xl sm:px-6 lg:px-8" style={{ backgroundColor: 'var(--bg-header)', borderColor: 'var(--border)' }}>
             <div className="flex items-center justify-between gap-4">
               <div className="flex min-w-0 items-center gap-3">
                 <button
@@ -378,10 +378,10 @@ const DashboardLayout = () => {
                   <Menu size={18} />
                 </button>
                 <div className="min-w-0">
-                  <p className="text-xs font-bold uppercase tracking-[0.16em] text-slate-400">
+                  <p className="text-xs font-bold uppercase tracking-[0.16em]" style={{ color: 'var(--text-muted)' }}>
                     {tenant?.name || 'FuseFlow'}
                   </p>
-                  <h2 className="truncate font-display text-xl font-extrabold tracking-tight text-slate-950">
+                  <h2 className="truncate font-display text-xl font-extrabold tracking-tight" style={{ color: 'var(--text-primary)' }}>
                     {activeLink?.label || 'Workspace'}
                   </h2>
                 </div>
@@ -401,7 +401,7 @@ const DashboardLayout = () => {
                 </div>
                 <div className="flex items-center gap-1">
                   <span className="px-1.5 py-0.5 rounded border text-[10px] font-bold" style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>
-                    ⌘K
+                    Ctrl K
                   </span>
                 </div>
               </button>
@@ -461,7 +461,7 @@ const DashboardLayout = () => {
                 <img src={brandLogo} alt="FuseFlow" className="h-10 w-10 rounded-2xl object-contain shadow-sm" />
                 <div>
                   <h1 className="font-display text-lg font-extrabold tracking-tight text-slate-950">FuseFlow</h1>
-                  <p className="text-[10px] font-extrabold uppercase tracking-[0.2em] text-indigo-500">Automation OS</p>
+                  <p className="text-[10px] font-extrabold uppercase tracking-[0.2em] text-indigo-500">Messaging OS</p>
                 </div>
               </div>
               <button
