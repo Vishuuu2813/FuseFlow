@@ -1,1 +1,8 @@
-/*    /index.html   200
+# Proxy: API requests → Railway backend
+/api/*  https://fuseflow-production.up.railway.app/api/:splat  200
+
+# Proxy: Socket.IO → Railway backend
+/socket.io/*  https://fuseflow-production.up.railway.app/socket.io/:splat  200
+
+# SPA fallback — must be LAST
+/*  /index.html  200
